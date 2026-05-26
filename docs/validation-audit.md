@@ -7,12 +7,13 @@ Objective audited: implement `docs/implementation-plan.md`.
 ## Summary
 
 The bridge, adapter boundary, KOReader plugin modules, mock flow, and real
-`nlm` EPUB bridge flow are implemented and locally verified.
+`nlm` EPUB bridge flow are implemented and locally verified. A real KOReader
+macOS arm64 runtime smoke also loaded the plugin, checked bridge status, and
+created/uploaded/linked a mock notebook from the KOReader UI.
 
-The remaining unproven item is runtime behavior inside real KOReader on a
-device, emulator, or desktop build. No runnable macOS KOReader build was present
-locally during this audit; only Kindle ARM bundles were found, which cannot run
-on this Mac.
+The remaining unproven item is the real highlighted-text ask flow inside
+KOReader, because selecting text reliably through the macOS UI was not
+automated in this audit.
 
 ## Evidence
 
@@ -101,6 +102,53 @@ Coverage relevance:
 This prepares the real runtime validation loop, but it does not replace opening
 KOReader and exercising the UI.
 
+### Real KOReader macOS Runtime Smoke
+
+Runtime source:
+
+- KOReader v2026.03 macOS arm64 GitHub Actions artifact
+- workflow run: <https://github.com/koreader/koreader/actions/runs/23214193860>
+- artifact: `KOReader-arm64-2026.03.7z`
+
+Commands and actions:
+
+```sh
+gh api repos/koreader/koreader/actions/artifacts/5973069038/zip \
+  > /tmp/koreader-notebooklm-macos/KOReader-arm64-2026.03.7z
+bsdtar -xf /tmp/koreader-notebooklm-macos/KOReader-arm64-2026.03.7z \
+  -C /tmp/koreader-notebooklm-macos/extracted
+scripts/install-plugin-dev.sh \
+  /tmp/koreader-notebooklm-macos/extracted/KOReader.app/Contents/koreader/plugins \
+  --copy
+scripts/koreader-runtime-preflight.sh \
+  /tmp/koreader-notebooklm-macos/extracted/KOReader.app/Contents/koreader/plugins
+KOREADER_NOTEBOOKLM_ADAPTER=mock scripts/run-bridge-dev.sh
+/tmp/koreader-notebooklm-macos/extracted/KOReader.app/Contents/MacOS/koreader \
+  -d /tmp/koreader-notebooklm-runtime-smoke.epub
+```
+
+Result:
+
+- KOReader opened the generated EPUB on macOS arm64.
+- KOReader debug logs included `Plugin loaded notebooklm` and
+  `RD loaded plugin notebooklm at plugins/notebooklm.koplugin`.
+- `NotebookLM -> Status` showed `Bridge: OK (mock)`.
+- `NotebookLM -> Current book setup -> Create+Upload` completed with:
+  `Notebook created, source uploaded, and book linked.`
+- A second `NotebookLM -> Status` showed the book linked to
+  `mock-created-notebook`.
+- Bridge logs showed:
+  - `GET /books/book-b137ed21` initially returned 404
+  - `GET /health` returned 200
+  - `POST /notebooks` returned 200
+  - `POST /sources/upload-file` returned 200
+  - `POST /books/link` returned 200
+  - subsequent `GET /books/book-b137ed21` returned 200
+
+This proves real KOReader plugin loading, status, setup, multipart upload, and
+book-link persistence in the macOS desktop runtime. It does not prove the real
+highlight selection menu or answer viewer path.
+
 ### Mock Plugin-Shaped Bridge Flow
 
 Command:
@@ -149,8 +197,8 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Bridge stores book-to-notebook mapping | Done | `/books/link`; pytest and smoke flow |
 | Link existing notebook | Done, stub-verified | `ui.lua` notebook picker; Lua verifier invokes picker callback and checks saved link |
 | Create notebook | Done | `/notebooks`; Lua verifier and smoke scripts |
-| Create notebook and upload source | Done | `ui.lua`; `/sources/upload-file`; Lua verifier; real EPUB smoke |
-| Highlight menu actions | Implemented, stub-verified | `main.lua`; Lua verifier executes highlight-menu callbacks |
+| Create notebook and upload source | Done | `ui.lua`; `/sources/upload-file`; Lua verifier; real EPUB smoke; real KOReader macOS UI smoke |
+| Highlight menu actions | Implemented, stub-verified | `main.lua`; Lua verifier executes highlight-menu callbacks; real KOReader highlight selection still not proven |
 | Preset prompts | Done | `prompts.lua`; `main.lua` prompt buttons |
 | Custom question | Done, stub-verified | `ui.lua` custom dialog; Lua verifier invokes custom ask callback |
 | Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke; Lua verifier checks selected text, prompt, notebook id, and book context payload |
@@ -160,7 +208,8 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke; Lua verifier checks default multipart client path |
 | JSON path upload for Mac-local smoke tests | Done | `/sources/upload`; pytest; Lua verifier checks `upload_mode=path` payload |
 | Real EPUB accepted by `nlm` path | Done | `scripts/smoke-real-epub.sh` run on 2026-05-26 |
-| KOReader real device/emulator runtime | Not proven | No runnable local KOReader environment available |
+| KOReader real desktop runtime | Partially proven | macOS arm64 KOReader v2026.03 UI smoke loads plugin, checks bridge status, and links current book in mock mode |
+| KOReader real highlighted ask flow | Not proven | Text selection/highlight menu interaction was not automated in real KOReader UI |
 | All-in-Kindle backend | Deferred | Plan explicitly keeps this future-only |
 
 ## KOReader Runtime Acceptance Checklist
