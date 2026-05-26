@@ -90,6 +90,7 @@ Useful checks:
 uv run --with lupa scripts/verify-plugin-lua.py
 cd bridge && uv run --extra dev pytest
 scripts/smoke-bridge.sh
+scripts/smoke-plugin-flow.sh
 ```
 
 On Kindle, inspect KOReader logs after restart and plugin use:

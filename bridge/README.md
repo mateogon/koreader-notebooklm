@@ -38,6 +38,12 @@ nlm doctor
 nlm notebook list --json
 ```
 
+With the bridge running in `mock` mode, run the full plugin-shaped smoke flow:
+
+```bash
+../scripts/smoke-plugin-flow.sh
+```
+
 Endpoints:
 
 - `GET /health`
