@@ -62,6 +62,7 @@ Coverage relevance:
 - highlight-menu registration
 - highlight-menu callback execution
 - setup skip action
+- settings menu for source upload, upload mode, and prompt-button defaults
 - link-existing notebook picker flow
 - create-notebook flow
 - multipart upload flow
@@ -122,7 +123,7 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | --- | --- | --- |
 | UI code depends on `client.lua`, not direct HTTP | Done | `main.lua` and `ui.lua` call `client.lua`; `http.lua` owns transport |
 | Internal plugin modules avoid generic `require` cache collisions | Done | `main.lua` loads plugin-local modules through `dofile(self.path .. ...)`; `client.lua` receives `http.lua` by injection |
-| Bridge URL and settings are configurable | Done | `settings.lua`; `NotebookLM -> Bridge URL` |
+| Bridge URL and settings are configurable | Done | `settings.lua`; `NotebookLM -> Bridge URL`; `NotebookLM -> Settings`; Lua verifier checks settings toggles |
 | Source upload feature flag | Done, stub-verified | `settings.lua`; Lua verifier checks hidden setup upload action and disabled upload error |
 | Book id is derived and link metadata stored locally | Done | `storage.lua`; Lua verifier exercises persistence |
 | Bridge stores book-to-notebook mapping | Done | `/books/link`; pytest and smoke flow |

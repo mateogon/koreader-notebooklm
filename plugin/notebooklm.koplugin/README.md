@@ -12,6 +12,8 @@ Current status:
 - can upload the current book file through the bridge multipart endpoint
 - sends highlighted text and preset/custom prompts to `/ask`
 - shows the last answer in KOReader's text viewer
+- exposes bridge URL, upload, upload mode, and prompt-button settings from the
+  Tools menu
 
 The plugin talks through `client.lua`; UI code does not call HTTP directly.
 

@@ -331,6 +331,23 @@ def main() -> None:
         local menu = {}
         plugin:addToMainMenu(menu)
         assert(menu.notebooklm, "missing NotebookLM tools menu")
+        local settings_menu = menu.notebooklm.sub_item_table[4]
+        assert(settings_menu and settings_menu.text == "Settings", "missing NotebookLM settings menu")
+        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 3, "settings menu does not expose expected settings")
+        assert(settings_menu.sub_item_table[1].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
+        settings_menu.sub_item_table[1].callback()
+        assert(plugin.settings:read("enable_upload") == false, "source upload toggle did not disable upload")
+        settings_menu.sub_item_table[1].callback()
+        assert(plugin.settings:read("enable_upload") == true, "source upload toggle did not re-enable upload")
+        assert(settings_menu.sub_item_table[2].text_func():find("multipart", 1, true), "upload mode menu did not show multipart mode")
+        settings_menu.sub_item_table[2].callback()
+        assert(plugin.settings:read("upload_mode") == "path", "upload mode toggle did not switch to path")
+        settings_menu.sub_item_table[2].callback()
+        assert(plugin.settings:read("upload_mode") == "multipart", "upload mode toggle did not switch back to multipart")
+        settings_menu.sub_item_table[3].callback()
+        assert(plugin.settings:read("show_prompt_buttons") == false, "prompt button toggle did not disable prompt buttons")
+        settings_menu.sub_item_table[3].callback()
+        assert(plugin.settings:read("show_prompt_buttons") == true, "prompt button toggle did not re-enable prompt buttons")
 
         local unlinked_item = highlight_buttons["notebooklm_ask"]({
             selected_text = { text = "Unlinked highlighted passage" },

@@ -53,6 +53,9 @@ From the Tools menu:
 - `NotebookLM -> Status`
 - `NotebookLM -> Current book setup`
 - `NotebookLM -> Bridge URL`
+- `NotebookLM -> Settings -> Source upload`
+- `NotebookLM -> Settings -> Upload mode`
+- `NotebookLM -> Settings -> Prompt buttons after restart`
 
 From highlighted text:
 
@@ -68,6 +71,15 @@ the bridge via `POST /sources/upload-file`.
 
 The bridge still supports JSON `file_path` upload via `POST /sources/upload`
 for Mac-local smoke tests where the bridge can already see the file path.
+
+Use `NotebookLM -> Settings -> Source upload` to hide/disable create-and-upload
+flows. Use `NotebookLM -> Settings -> Upload mode` to switch between
+`multipart` and `path`. `multipart` is the portable default for a real device;
+`path` is only useful when the bridge can read the same local file path.
+
+`NotebookLM -> Settings -> Prompt buttons after restart` controls whether
+preset prompt buttons are registered in the highlight menu the next time the
+plugin is loaded.
 
 ## Local Verification Without KOReader
 

@@ -13,6 +13,10 @@ local function load_plugin_module(plugin, filename)
     return dofile(plugin.path .. "/" .. filename)
 end
 
+local function enabled_label(value)
+    return value and _("enabled") or _("disabled")
+end
+
 function NotebookLM:onDispatcherRegisterActions()
     local Dispatcher = require("dispatcher")
     Dispatcher:registerAction("notebooklm_status", {
@@ -122,6 +126,35 @@ function NotebookLM:addToMainMenu(menu_items)
                     self:showBridgeUrlDialog()
                 end,
             },
+            {
+                text = _("Settings"),
+                sub_item_table = {
+                    {
+                        text_func = function()
+                            return _("Source upload: ") .. enabled_label(self.settings:read("enable_upload"))
+                        end,
+                        callback = function()
+                            self:toggleSourceUpload()
+                        end,
+                    },
+                    {
+                        text_func = function()
+                            return _("Upload mode: ") .. tostring(self.settings:read("upload_mode"))
+                        end,
+                        callback = function()
+                            self:toggleUploadMode()
+                        end,
+                    },
+                    {
+                        text_func = function()
+                            return _("Prompt buttons after restart: ") .. enabled_label(self.settings:read("show_prompt_buttons"))
+                        end,
+                        callback = function()
+                            self:togglePromptButtons()
+                        end,
+                    },
+                },
+            },
         },
     }
 end
@@ -156,6 +189,19 @@ function NotebookLM:showBridgeUrlDialog()
         },
     }
     UIManager:show(input_dialog)
+end
+
+function NotebookLM:toggleSourceUpload()
+    self.settings:write("enable_upload", not self.settings:read("enable_upload"))
+end
+
+function NotebookLM:toggleUploadMode()
+    local current = self.settings:read("upload_mode")
+    self.settings:write("upload_mode", current == "path" and "multipart" or "path")
+end
+
+function NotebookLM:togglePromptButtons()
+    self.settings:write("show_prompt_buttons", not self.settings:read("show_prompt_buttons"))
 end
 
 function NotebookLM:onNotebookLMStatus()
