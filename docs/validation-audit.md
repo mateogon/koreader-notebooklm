@@ -66,6 +66,7 @@ Coverage relevance:
 - link-existing notebook picker flow
 - create-notebook flow
 - multipart upload flow
+- JSON path upload flow
 - book-link persistence
 - preset prompt ask flow
 - custom question ask flow
@@ -136,7 +137,8 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke; Lua verifier checks selected text, prompt, notebook id, and book context payload |
 | Scrollable answer view | Done, stub-verified | `TextViewer.openFile`; Lua verifier checks answer, long selected text, long answer text, source, reference, and citation output |
 | Offline bridge error display | Done, stub-verified | Lua verifier forces network error and checks status dialog text |
-| Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke |
+| Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke; Lua verifier checks default multipart client path |
+| JSON path upload for Mac-local smoke tests | Done | `/sources/upload`; pytest; Lua verifier checks `upload_mode=path` payload |
 | Real EPUB accepted by `nlm` path | Done | `scripts/smoke-real-epub.sh` run on 2026-05-26 |
 | KOReader real device/emulator runtime | Not proven | No runnable local KOReader environment available |
 | All-in-Kindle backend | Deferred | Plan explicitly keeps this future-only |

@@ -144,6 +144,9 @@ preload["socket.http"] = function()
     _G.__http_requests = {}
     _G.__linked_book = nil
     _G.__force_network_error = false
+    _G.__multipart_upload_seen = false
+    _G.__path_upload_seen = false
+    _G.__last_path_upload_payload = nil
     return {
         request = function(req)
             local url = req.url or ""
@@ -173,6 +176,11 @@ preload["socket.http"] = function()
                     code = 404
                 end
             elseif url:find("/sources/upload%-file", 1, false) then
+                _G.__multipart_upload_seen = true
+                body = "UPLOAD_SOURCE"
+            elseif url:find("/sources/upload", 1, true) then
+                _G.__path_upload_seen = true
+                _G.__last_path_upload_payload = _G.__last_encoded_value
                 body = "UPLOAD_SOURCE"
             elseif url:find("/ask", 1, true) then
                 body = "ASK"
@@ -371,6 +379,19 @@ def main() -> None:
         local link = plugin.storage:get_link(plugin.ui)
         assert(link and link.notebook_id == "created-notebook", "book link was not saved")
         assert(link.source_id == "uploaded-source", "uploaded source id was not saved")
+        assert(_G.__multipart_upload_seen == true, "multipart upload endpoint was not used by default")
+
+        _G.__multipart_upload_seen = false
+        _G.__path_upload_seen = false
+        _G.__last_path_upload_payload = nil
+        plugin.settings:write("upload_mode", "path")
+        plugin.notebooklm_ui:create_notebook("Path Upload Notebook", true)
+        assert(_G.__path_upload_seen == true, "path upload endpoint was not used when upload_mode=path")
+        assert(_G.__multipart_upload_seen == false, "multipart upload endpoint was used when upload_mode=path")
+        assert(_G.__last_path_upload_payload and _G.__last_path_upload_payload.file_path == "/tmp/book.epub", "path upload file_path was not sent")
+        assert(_G.__last_path_upload_payload and _G.__last_path_upload_payload.notebook_id == "created-notebook", "path upload notebook id was not sent")
+        assert(_G.__last_path_upload_payload and _G.__last_path_upload_payload.wait == true, "path upload wait flag was not sent as boolean")
+        plugin.settings:write("upload_mode", "multipart")
 
         plugin.settings:write("enable_upload", false)
         plugin.notebooklm_ui:show_setup()
