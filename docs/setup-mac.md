@@ -64,43 +64,34 @@ v2026.03 on Apple Silicon, the validated artifact was:
 - workflow run: <https://github.com/koreader/koreader/actions/runs/23214193860>
 - artifact: `KOReader-arm64-2026.03.7z`
 
-Download and extract with GitHub CLI:
+Run the automated smoke:
+
+```sh
+scripts/smoke-koreader-macos.sh
+```
+
+The script downloads the artifact if needed, extracts it under
+`/tmp/koreader-notebooklm-macos`, installs the plugin into the app bundle,
+starts a mock bridge if one is not already reachable, opens a generated EPUB in
+KOReader, and checks the debug log for plugin load plus Lua stack traces.
+
+Manual download and extract, if needed:
 
 ```sh
 mkdir -p /tmp/koreader-notebooklm-macos
-gh run download 23214193860 \
-  --repo koreader/koreader \
-  --name KOReader-arm64-2026.03.7z \
-  --dir /tmp/koreader-notebooklm-macos
-bsdtar -xf /tmp/koreader-notebooklm-macos/KOReader-arm64-2026.03.7z \
-  -C /tmp/koreader-notebooklm-macos
-```
-
-If `gh run download` fails trying to unzip the artifact, use the artifact API
-directly. For this run, GitHub returns the `.7z` payload itself:
-
-```sh
 gh api repos/koreader/koreader/actions/artifacts/5973069038/zip \
   > /tmp/koreader-notebooklm-macos/KOReader-arm64-2026.03.7z
-```
-
-Install the plugin into the extracted app:
-
-```sh
-scripts/install-plugin-dev.sh \
-  /tmp/koreader-notebooklm-macos/KOReader.app/Contents/koreader/plugins \
-  --copy
-scripts/koreader-runtime-preflight.sh \
-  /tmp/koreader-notebooklm-macos/KOReader.app/Contents/koreader/plugins
+bsdtar -xf /tmp/koreader-notebooklm-macos/KOReader-arm64-2026.03.7z \
+  -C /tmp/koreader-notebooklm-macos/extracted
 ```
 
 Runtime smoke used on 2026-05-26:
 
-1. Start the bridge in mock mode on `127.0.0.1:8765`.
+1. Run `scripts/smoke-koreader-macos.sh`.
 2. Open a generated EPUB with:
 
    ```sh
-   /tmp/koreader-notebooklm-macos/KOReader.app/Contents/MacOS/koreader \
+   /tmp/koreader-notebooklm-macos/extracted/KOReader.app/Contents/MacOS/koreader \
      -d /tmp/koreader-notebooklm-runtime-smoke.epub
    ```
 

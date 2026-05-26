@@ -113,18 +113,7 @@ Runtime source:
 Commands and actions:
 
 ```sh
-gh api repos/koreader/koreader/actions/artifacts/5973069038/zip \
-  > /tmp/koreader-notebooklm-macos/KOReader-arm64-2026.03.7z
-bsdtar -xf /tmp/koreader-notebooklm-macos/KOReader-arm64-2026.03.7z \
-  -C /tmp/koreader-notebooklm-macos/extracted
-scripts/install-plugin-dev.sh \
-  /tmp/koreader-notebooklm-macos/extracted/KOReader.app/Contents/koreader/plugins \
-  --copy
-scripts/koreader-runtime-preflight.sh \
-  /tmp/koreader-notebooklm-macos/extracted/KOReader.app/Contents/koreader/plugins
-KOREADER_NOTEBOOKLM_ADAPTER=mock scripts/run-bridge-dev.sh
-/tmp/koreader-notebooklm-macos/extracted/KOReader.app/Contents/MacOS/koreader \
-  -d /tmp/koreader-notebooklm-runtime-smoke.epub
+scripts/smoke-koreader-macos.sh
 ```
 
 Result:
@@ -132,6 +121,7 @@ Result:
 - KOReader opened the generated EPUB on macOS arm64.
 - KOReader debug logs included `Plugin loaded notebooklm` and
   `RD loaded plugin notebooklm at plugins/notebooklm.koplugin`.
+- The automated smoke checked that no Lua `stack traceback` appeared.
 - `NotebookLM -> Status` showed `Bridge: OK (mock)`.
 - `NotebookLM -> Current book setup -> Create+Upload` completed with:
   `Notebook created, source uploaded, and book linked.`
@@ -205,6 +195,7 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Scrollable answer view | Done, stub-verified | `TextViewer.openFile`; Lua verifier checks answer, long selected text, long answer text, source, reference, and citation output |
 | Offline bridge error display | Done, stub-verified | Lua verifier forces network error and checks status dialog text |
 | Install/debug preflight | Done | `scripts/koreader-runtime-preflight.sh`; setup docs |
+| KOReader macOS launch smoke | Done | `scripts/smoke-koreader-macos.sh` downloads/runs KOReader v2026.03 arm64, verifies plugin load, and checks no Lua stack trace |
 | Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke; Lua verifier checks default multipart client path |
 | JSON path upload for Mac-local smoke tests | Done | `/sources/upload`; pytest; Lua verifier checks `upload_mode=path` payload |
 | Real EPUB accepted by `nlm` path | Done | `scripts/smoke-real-epub.sh` run on 2026-05-26 |
