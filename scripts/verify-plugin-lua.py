@@ -218,7 +218,10 @@ end
 
 preload["json"] = function()
     return {
-        encode = function() return "{}" end,
+        encode = function(value)
+            _G.__last_encoded_value = value
+            return "{}"
+        end,
         decode = function(value)
             if value == "HEALTH" then
                 return { ok = true, adapter = "mock" }
@@ -329,6 +332,14 @@ def main() -> None:
         plugin:addToMainMenu(menu)
         assert(menu.notebooklm, "missing NotebookLM tools menu")
 
+        local unlinked_item = highlight_buttons["notebooklm_ask"]({
+            selected_text = { text = "Unlinked highlighted passage" },
+        })
+        assert(unlinked_item and unlinked_item.callback, "Ask NotebookLM highlight item did not render")
+        unlinked_item.callback()
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "unlinked highlight did not open setup")
+        plugin.notebooklm_ui:_close_input()
+
         plugin.notebooklm_ui:show_status()
 
         plugin.notebooklm_ui:show_notebook_picker("", nil)
@@ -343,11 +354,27 @@ def main() -> None:
         assert(link and link.notebook_id == "created-notebook", "book link was not saved")
         assert(link.source_id == "uploaded-source", "uploaded source id was not saved")
 
+        local prompt_item = highlight_buttons["notebooklm_explain_simple"]({
+            selected_text = { text = "Prompt button selected text" },
+        })
+        assert(prompt_item and prompt_item.callback, "prompt highlight item did not render")
+        prompt_item.callback()
+        local prompt_payload = _G.__last_encoded_value
+        assert(prompt_payload and prompt_payload.selected_text == "Prompt button selected text", "highlight prompt selected text was not sent")
+        assert(prompt_payload.prompt == plugin.prompts.get("explain_simple").prompt, "highlight prompt preset was not sent")
+        assert(prompt_payload.notebook_id == "created-notebook", "highlight prompt notebook id was not sent")
+        assert(prompt_payload.book and prompt_payload.book.title == "Book", "highlight prompt book title was not sent")
+        assert(prompt_payload.book and prompt_payload.book.position == "25.0%", "highlight prompt book position was not sent")
+
         plugin.notebooklm_ui:ask_with_prompt(
             "Highlighted passage",
             "Explain this passage simply.",
             "Explica simple"
         )
+        local ask_payload = _G.__last_encoded_value
+        assert(ask_payload and ask_payload.selected_text == "Highlighted passage", "ask selected text was not sent")
+        assert(ask_payload.prompt == "Explain this passage simply.", "ask prompt was not sent")
+        assert(ask_payload.book and ask_payload.book.author == "Author", "ask book author was not sent")
         local viewer = require("ui/widget/textviewer")
         assert(viewer.last_opened == "/tmp/notebooklm-last-answer.md", "answer viewer was not opened")
         local file = io.open(viewer.last_opened, "r")

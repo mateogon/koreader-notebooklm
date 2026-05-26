@@ -60,6 +60,7 @@ Coverage relevance:
 - plugin loads
 - Tools-menu registration
 - highlight-menu registration
+- highlight-menu callback execution
 - link-existing notebook picker flow
 - create-notebook flow
 - multipart upload flow
@@ -67,6 +68,8 @@ Coverage relevance:
 - preset prompt ask flow
 - custom question ask flow
 - ask flow
+- `/ask` payload includes notebook id, selected text, prompt, book title,
+  author, path, and reading position
 - answer file creation
 - answer viewer open call
 - source/reference/citation rendering
@@ -123,10 +126,10 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Link existing notebook | Done, stub-verified | `ui.lua` notebook picker; Lua verifier invokes picker callback and checks saved link |
 | Create notebook | Done | `/notebooks`; Lua verifier and smoke scripts |
 | Create notebook and upload source | Done | `ui.lua`; `/sources/upload-file`; Lua verifier; real EPUB smoke |
-| Highlight menu actions | Implemented, stub-verified | `main.lua`; Lua verifier |
+| Highlight menu actions | Implemented, stub-verified | `main.lua`; Lua verifier executes highlight-menu callbacks |
 | Preset prompts | Done | `prompts.lua`; `main.lua` prompt buttons |
 | Custom question | Done, stub-verified | `ui.lua` custom dialog; Lua verifier invokes custom ask callback |
-| Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke |
+| Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke; Lua verifier checks selected text, prompt, notebook id, and book context payload |
 | Scrollable answer view | Done, stub-verified | `TextViewer.openFile`; Lua verifier checks answer, long selected text, long answer text, source, reference, and citation output |
 | Offline bridge error display | Done, stub-verified | Lua verifier forces network error and checks status dialog text |
 | Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke |
