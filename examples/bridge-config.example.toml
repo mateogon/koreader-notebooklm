@@ -1,0 +1,6 @@
+# Example bridge config.
+# Do not include credentials, cookies, or auth file contents.
+
+host = "127.0.0.1"
+port = 8765
+

@@ -1,0 +1,30 @@
+"""Configuration for the local bridge."""
+
+from dataclasses import dataclass
+import os
+from pathlib import Path
+
+
+@dataclass(frozen=True)
+class BridgeConfig:
+    host: str = "127.0.0.1"
+    port: int = 8765
+    adapter: str = "mock"
+    default_notebook_id: str | None = None
+    nlm_command: str = "nlm"
+    nlm_profile: str | None = None
+    nlm_timeout_seconds: float = 120.0
+    data_dir: Path = Path("data")
+
+
+def load_config() -> BridgeConfig:
+    return BridgeConfig(
+        host=os.getenv("KOREADER_NOTEBOOKLM_HOST", "127.0.0.1"),
+        port=int(os.getenv("KOREADER_NOTEBOOKLM_PORT", "8765")),
+        adapter=os.getenv("KOREADER_NOTEBOOKLM_ADAPTER", "mock"),
+        default_notebook_id=os.getenv("KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID"),
+        nlm_command=os.getenv("KOREADER_NOTEBOOKLM_NLM_COMMAND", "nlm"),
+        nlm_profile=os.getenv("KOREADER_NOTEBOOKLM_NLM_PROFILE"),
+        nlm_timeout_seconds=float(os.getenv("KOREADER_NOTEBOOKLM_NLM_TIMEOUT_SECONDS", "120")),
+        data_dir=Path(os.getenv("KOREADER_NOTEBOOKLM_DATA_DIR", "data")),
+    )

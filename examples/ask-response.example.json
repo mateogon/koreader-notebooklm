@@ -1,0 +1,10 @@
+{
+  "ok": true,
+  "answer": "Placeholder response.",
+  "notebook_id": "mock-notebook",
+  "adapter": "mock",
+  "conversation_id": null,
+  "sources_used": [],
+  "citations": {},
+  "references": []
+}

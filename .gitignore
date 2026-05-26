@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+auth.json
+cookies.txt
+*.cookies
+
+# Local data
+*.sqlite
+*.sqlite3
+*.db
+data/
+
+# Logs
+*.log
+logs/
+
+# macOS
+.DS_Store
+
+# Temporary files
+tmp/
+temp/
+*.tmp
+*.swp
+
+# Local reference repos, not project dependencies
+vendor-references/
+
+# KOReader local test artifacts
+*.sdr/
+koreader-settings.local.lua
+plugin-test-output/

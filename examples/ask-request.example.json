@@ -1,0 +1,11 @@
+{
+  "notebook_id": "mock-notebook",
+  "selected_text": "Selected text will go here.",
+  "prompt": "Explain this passage.",
+  "book": {
+    "title": "Example Book",
+    "author": "Example Author",
+    "path": "/mnt/us/documents/example.epub",
+    "position": "chapter 1 / 10%"
+  }
+}
