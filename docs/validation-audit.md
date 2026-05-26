@@ -82,6 +82,25 @@ Coverage relevance:
 
 This uses lightweight Lua stubs, not real KOReader widgets.
 
+### KOReader Runtime Preflight
+
+Command:
+
+```sh
+scripts/koreader-runtime-preflight.sh [koreader-plugins-dir] [bridge-url]
+```
+
+Coverage relevance:
+
+- verifies local plugin source files
+- verifies installed plugin files when a KOReader plugins directory is provided
+- checks bridge `/health` when reachable
+- lists KOReader log candidates near the provided plugins directory
+- prints the remaining manual KOReader acceptance steps
+
+This prepares the real runtime validation loop, but it does not replace opening
+KOReader and exercising the UI.
+
 ### Mock Plugin-Shaped Bridge Flow
 
 Command:
@@ -137,6 +156,7 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke; Lua verifier checks selected text, prompt, notebook id, and book context payload |
 | Scrollable answer view | Done, stub-verified | `TextViewer.openFile`; Lua verifier checks answer, long selected text, long answer text, source, reference, and citation output |
 | Offline bridge error display | Done, stub-verified | Lua verifier forces network error and checks status dialog text |
+| Install/debug preflight | Done | `scripts/koreader-runtime-preflight.sh`; setup docs |
 | Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke; Lua verifier checks default multipart client path |
 | JSON path upload for Mac-local smoke tests | Done | `/sources/upload`; pytest; Lua verifier checks `upload_mode=path` payload |
 | Real EPUB accepted by `nlm` path | Done | `scripts/smoke-real-epub.sh` run on 2026-05-26 |
@@ -159,26 +179,32 @@ Use this checklist on a Kindle, emulator, or runnable desktop KOReader build:
    KOREADER_NOTEBOOKLM_HOST=0.0.0.0 scripts/run-bridge-dev.sh
    ```
 
-3. In KOReader, set:
+3. Run preflight:
+
+   ```sh
+   scripts/koreader-runtime-preflight.sh /path/to/koreader/plugins http://<mac-lan-ip>:8765
+   ```
+
+4. In KOReader, set:
 
    ```text
    NotebookLM -> Bridge URL -> http://<mac-lan-ip>:8765
    ```
 
-4. Open a book.
-5. Confirm `NotebookLM -> Status` shows bridge OK.
-6. Run `NotebookLM -> Current book setup`.
-7. Create a notebook in mock mode.
-8. Reopen setup and confirm the book remains linked.
-9. Highlight text.
-10. Tap `Ask NotebookLM`.
-11. Send a custom question.
-12. Confirm answer opens in KOReader.
-13. Highlight text again.
-14. Tap a preset prompt such as `Explica simple (NotebookLM)`.
-15. Confirm answer opens in KOReader.
-16. Stop bridge and confirm plugin shows a readable bridge error.
-17. Inspect KOReader logs for stack traces.
+5. Open a book.
+6. Confirm `NotebookLM -> Status` shows bridge OK.
+7. Run `NotebookLM -> Current book setup`.
+8. Create a notebook in mock mode.
+9. Reopen setup and confirm the book remains linked.
+10. Highlight text.
+11. Tap `Ask NotebookLM`.
+12. Send a custom question.
+13. Confirm answer opens in KOReader.
+14. Highlight text again.
+15. Tap a preset prompt such as `Explica simple (NotebookLM)`.
+16. Confirm answer opens in KOReader.
+17. Stop bridge and confirm plugin shows a readable bridge error.
+18. Inspect KOReader logs for stack traces.
 
 After mock mode passes, repeat with:
 

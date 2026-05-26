@@ -28,6 +28,14 @@ devices where symlinks may not work as expected.
 
 Restart KOReader after installing the plugin.
 
+Before opening KOReader, run the preflight script to verify the installed files
+and bridge reachability:
+
+```sh
+scripts/koreader-runtime-preflight.sh /path/to/koreader/plugins
+scripts/koreader-runtime-preflight.sh /mnt/us/koreader/plugins http://<mac-lan-ip>:8765
+```
+
 ## Configure The Bridge
 
 Start the bridge on the Mac:
@@ -103,6 +111,7 @@ uv run --with lupa scripts/verify-plugin-lua.py
 cd bridge && uv run --extra dev pytest
 scripts/smoke-bridge.sh
 scripts/smoke-plugin-flow.sh
+scripts/koreader-runtime-preflight.sh /path/to/koreader/plugins
 ```
 
 On Kindle, inspect KOReader logs after restart and plugin use:

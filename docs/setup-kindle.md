@@ -24,6 +24,18 @@ If working directly on the Kindle shell, the target is usually:
 
 Restart KOReader after copying.
 
+Then run a safe preflight from the Mac while the Kindle is mounted:
+
+```sh
+scripts/koreader-runtime-preflight.sh /Volumes/Kindle/koreader/plugins http://<mac-lan-ip>:8765
+```
+
+If working from a Kindle shell, use the on-device path:
+
+```sh
+scripts/koreader-runtime-preflight.sh /mnt/us/koreader/plugins http://<mac-lan-ip>:8765
+```
+
 ## Bridge URL
 
 The Kindle cannot use `127.0.0.1` to reach a bridge running on the Mac. Use the
