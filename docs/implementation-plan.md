@@ -337,8 +337,9 @@ Output:
 - test health, link, create, upload, and ask from KOReader
 - collect KOReader log locations and common errors
 
-Status: setup docs are updated. Manual KOReader device/emulator validation is
-still required.
+Status: setup docs are updated and `docs/validation-audit.md` contains a
+device/emulator acceptance checklist. Manual KOReader device/emulator
+validation is still required.
 
 ### Phase 7 - Portability Pass
 

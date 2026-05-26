@@ -1,0 +1,173 @@
+# Validation Audit
+
+Audit date: 2026-05-26
+
+Objective audited: implement `docs/implementation-plan.md`.
+
+## Summary
+
+The bridge, adapter boundary, KOReader plugin modules, mock flow, and real
+`nlm` EPUB bridge flow are implemented and locally verified.
+
+The remaining unproven item is runtime behavior inside real KOReader on a
+device, emulator, or desktop build. No runnable macOS KOReader build was present
+locally during this audit; only Kindle ARM bundles were found, which cannot run
+on this Mac.
+
+## Evidence
+
+### Bridge Tests
+
+Command:
+
+```sh
+cd bridge && uv run --extra dev pytest
+```
+
+Result:
+
+```text
+19 passed
+```
+
+Coverage relevance:
+
+- `/health`
+- `/notebooks`
+- `/books/{book_id}`
+- `/books/link`
+- `/sources/upload`
+- `/sources/upload-file`
+- `/ask`
+- `nlm` adapter parsing and command behavior
+
+### Plugin Lua Runtime Smoke
+
+Command:
+
+```sh
+uv run --with lupa scripts/verify-plugin-lua.py
+```
+
+Result:
+
+```text
+plugin runtime smoke ok
+```
+
+Coverage relevance:
+
+- plugin loads
+- Tools-menu registration
+- highlight-menu registration
+- create-notebook flow
+- multipart upload flow
+- book-link persistence
+- ask flow
+- answer file creation
+- answer viewer open call
+
+This uses lightweight Lua stubs, not real KOReader widgets.
+
+### Mock Plugin-Shaped Bridge Flow
+
+Command:
+
+```sh
+scripts/smoke-plugin-flow.sh
+```
+
+Result:
+
+- notebook created through bridge mock adapter
+- source uploaded through `/sources/upload-file`
+- book linked through `/books/link`
+- mapping retrieved through `/books/{book_id}`
+- highlighted text asked through `/ask`
+
+### Real `nlm` EPUB Flow
+
+Command shape:
+
+```sh
+KOREADER_NOTEBOOKLM_ADAPTER=nlm ./scripts/run-bridge-dev.sh
+KOREADER_NOTEBOOKLM_REAL_SMOKE=1 scripts/smoke-real-epub.sh
+```
+
+Result:
+
+- `nlm doctor` passed
+- temporary NotebookLM notebook created
+- generated EPUB uploaded through bridge multipart endpoint
+- `POST /ask` returned an answer
+- response included citation/reference data for the uploaded EPUB source
+- temporary NotebookLM notebook deleted
+
+This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
+
+## Requirement Status
+
+| Requirement | Status | Evidence |
+| --- | --- | --- |
+| UI code depends on `client.lua`, not direct HTTP | Done | `main.lua` and `ui.lua` call `client.lua`; `http.lua` owns transport |
+| Bridge URL and settings are configurable | Done | `settings.lua`; `NotebookLM -> Bridge URL` |
+| Book id is derived and link metadata stored locally | Done | `storage.lua`; Lua verifier exercises persistence |
+| Bridge stores book-to-notebook mapping | Done | `/books/link`; pytest and smoke flow |
+| Link existing notebook | Implemented, stub-verified | `ui.lua` notebook picker; Lua verifier covers client path indirectly |
+| Create notebook | Done | `/notebooks`; Lua verifier and smoke scripts |
+| Create notebook and upload source | Done | `ui.lua`; `/sources/upload-file`; Lua verifier; real EPUB smoke |
+| Highlight menu actions | Implemented, stub-verified | `main.lua`; Lua verifier |
+| Preset prompts | Done | `prompts.lua`; `main.lua` prompt buttons |
+| Custom question | Implemented, syntax/stub verified | `ui.lua` custom dialog |
+| Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke |
+| Scrollable answer view | Implemented, stub-verified | `TextViewer.openFile`; Lua verifier |
+| Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke |
+| Real EPUB accepted by `nlm` path | Done | `scripts/smoke-real-epub.sh` run on 2026-05-26 |
+| KOReader real device/emulator runtime | Not proven | No runnable local KOReader environment available |
+| All-in-Kindle backend | Deferred | Plan explicitly keeps this future-only |
+
+## KOReader Runtime Acceptance Checklist
+
+Use this checklist on a Kindle, emulator, or runnable desktop KOReader build:
+
+1. Install plugin with:
+
+   ```sh
+   scripts/install-plugin-dev.sh /path/to/koreader/plugins --copy
+   ```
+
+2. Start bridge in mock mode:
+
+   ```sh
+   KOREADER_NOTEBOOKLM_HOST=0.0.0.0 scripts/run-bridge-dev.sh
+   ```
+
+3. In KOReader, set:
+
+   ```text
+   NotebookLM -> Bridge URL -> http://<mac-lan-ip>:8765
+   ```
+
+4. Open a book.
+5. Confirm `NotebookLM -> Status` shows bridge OK.
+6. Run `NotebookLM -> Current book setup`.
+7. Create a notebook in mock mode.
+8. Reopen setup and confirm the book remains linked.
+9. Highlight text.
+10. Tap `Ask NotebookLM`.
+11. Send a custom question.
+12. Confirm answer opens in KOReader.
+13. Highlight text again.
+14. Tap a preset prompt such as `Explica simple (NotebookLM)`.
+15. Confirm answer opens in KOReader.
+16. Stop bridge and confirm plugin shows a readable bridge error.
+17. Inspect KOReader logs for stack traces.
+
+After mock mode passes, repeat with:
+
+```sh
+KOREADER_NOTEBOOKLM_ADAPTER=nlm KOREADER_NOTEBOOKLM_HOST=0.0.0.0 scripts/run-bridge-dev.sh
+```
+
+Acceptance requires no Lua stack traces, successful link persistence, successful
+ask flow, and readable answer display.

@@ -23,6 +23,7 @@ NotebookLM auth files, cookies, and generated auth artifacts such as `auth.json`
 ## Planning Docs
 
 - [Implementation plan](docs/implementation-plan.md)
+- [Validation audit](docs/validation-audit.md)
 - [MVP plan](docs/mvp-plan.md)
 - [Context from planning chat](docs/context-from-chatgpt.md)
 - [NotebookLM research notes](docs/notebooklm-research.md)
