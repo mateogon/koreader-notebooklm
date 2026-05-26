@@ -130,6 +130,34 @@ function NotebookLMUI:show_setup(on_ready)
     local link_text = link and link.notebook_id
         and ("Current notebook:\n" .. tostring(link.notebook_title or link.notebook_id))
         or "This book is not linked to a NotebookLM notebook yet."
+    local action_row = {
+        {
+            text = _("List"),
+            callback = function()
+                local filter = self.input_dialog:getInputText()
+                self:_close_input()
+                self:show_notebook_picker(filter, on_ready)
+            end,
+        },
+        {
+            text = _("Create"),
+            callback = function()
+                local title = self.input_dialog:getInputText()
+                self:_close_input()
+                self:create_notebook(title, false, on_ready)
+            end,
+        },
+    }
+    if self.settings:read("enable_upload") then
+        table.insert(action_row, {
+            text = _("Create+Upload"),
+            callback = function()
+                local title = self.input_dialog:getInputText()
+                self:_close_input()
+                self:create_notebook(title, true, on_ready)
+            end,
+        })
+    end
 
     self.input_dialog = InputDialog:new{
         title = _("NotebookLM setup"),
@@ -143,7 +171,7 @@ function NotebookLMUI:show_setup(on_ready)
         buttons = {
             {
                 {
-                    text = _("Cancel"),
+                    text = _("Skip"),
                     callback = function()
                         self:_close_input()
                     end,
@@ -169,32 +197,7 @@ function NotebookLMUI:show_setup(on_ready)
                     end,
                 },
             },
-            {
-                {
-                    text = _("List"),
-                    callback = function()
-                        local filter = self.input_dialog:getInputText()
-                        self:_close_input()
-                        self:show_notebook_picker(filter, on_ready)
-                    end,
-                },
-                {
-                    text = _("Create"),
-                    callback = function()
-                        local title = self.input_dialog:getInputText()
-                        self:_close_input()
-                        self:create_notebook(title, false, on_ready)
-                    end,
-                },
-                {
-                    text = _("Create+Upload"),
-                    callback = function()
-                        local title = self.input_dialog:getInputText()
-                        self:_close_input()
-                        self:create_notebook(title, true, on_ready)
-                    end,
-                },
-            },
+            action_row,
         },
     }
     UIManager:show(self.input_dialog)
@@ -288,6 +291,10 @@ function NotebookLMUI:create_notebook(title, upload_after, on_ready)
 
     local source_id = nil
     if upload_after then
+        if not self.settings:read("enable_upload") then
+            self:_show_error("Source upload is disabled in NotebookLM settings.")
+            return
+        end
         if not book.path or book.path == "" then
             self:_show_error("This book does not expose a file path for upload.")
             return

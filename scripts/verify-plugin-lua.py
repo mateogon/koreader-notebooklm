@@ -338,6 +338,7 @@ def main() -> None:
         assert(unlinked_item and unlinked_item.callback, "Ask NotebookLM highlight item did not render")
         unlinked_item.callback()
         assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "unlinked highlight did not open setup")
+        assert(plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Skip", "setup does not expose a skip action")
         plugin.notebooklm_ui:_close_input()
 
         plugin.notebooklm_ui:show_status()
@@ -353,6 +354,19 @@ def main() -> None:
         local link = plugin.storage:get_link(plugin.ui)
         assert(link and link.notebook_id == "created-notebook", "book link was not saved")
         assert(link.source_id == "uploaded-source", "uploaded source id was not saved")
+
+        plugin.settings:write("enable_upload", false)
+        plugin.notebooklm_ui:show_setup()
+        local setup_without_upload = plugin.notebooklm_ui.input_dialog
+        assert(setup_without_upload and #setup_without_upload.buttons[2] == 2, "upload button was not hidden when upload is disabled")
+        assert(setup_without_upload.buttons[2][1].text == "List", "setup list button is missing")
+        assert(setup_without_upload.buttons[2][2].text == "Create", "setup create button is missing")
+        plugin.notebooklm_ui:_close_input()
+        plugin.notebooklm_ui:create_notebook("Disabled Upload", true)
+        local uimanager_disabled = require("ui/uimanager")
+        local disabled_upload_message = uimanager_disabled.shown[#uimanager_disabled.shown]
+        assert(disabled_upload_message and disabled_upload_message.text and disabled_upload_message.text:find("Source upload is disabled", 1, true), "disabled upload error was not shown")
+        plugin.settings:write("enable_upload", true)
 
         local prompt_item = highlight_buttons["notebooklm_explain_simple"]({
             selected_text = { text = "Prompt button selected text" },
