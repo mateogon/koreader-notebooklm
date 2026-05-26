@@ -259,7 +259,7 @@ preload["json"] = function()
             elseif value == "ASK" then
                 return {
                     ok = true,
-                    answer = "Mock answer from bridge",
+                    answer = "Mock answer from bridge\n\n" .. string.rep("Long answer paragraph from bridge. ", 200),
                     notebook_id = "created-notebook",
                     adapter = "mock",
                     sources_used = { "source-1" },
@@ -373,6 +373,20 @@ def main() -> None:
         custom_file:close()
         assert(custom_content:find("Custom highlighted passage", 1, true), "custom highlight content is missing")
         assert(custom_content:find("Prompt: Custom", 1, true), "custom prompt label is missing")
+
+        local long_passage = string.rep("Long highlighted passage. ", 200)
+        plugin.notebooklm_ui:ask_with_prompt(
+            long_passage,
+            "Summarize this passage in three bullets.",
+            "Tres bullets"
+        )
+        local long_viewer = require("ui/widget/textviewer")
+        local long_file = io.open(long_viewer.last_opened, "r")
+        assert(long_file, "long answer file was not written")
+        local long_content = long_file:read("*all")
+        long_file:close()
+        assert(long_content:find("Long highlighted passage. Long highlighted passage.", 1, true), "long highlight content is missing")
+        assert(long_content:find("Long answer paragraph from bridge. Long answer paragraph from bridge.", 1, true), "long answer content is missing")
 
         _G.__force_network_error = true
         plugin.notebooklm_ui:show_status()
