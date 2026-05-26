@@ -14,3 +14,9 @@ Current status:
 - shows the last answer in KOReader's text viewer
 
 The plugin talks through `client.lua`; UI code does not call HTTP directly.
+
+From the repository root, run this lightweight load test:
+
+```sh
+uv run --with lupa scripts/verify-plugin-lua.py
+```

@@ -59,6 +59,18 @@ the bridge via `POST /sources/upload-file`.
 The bridge still supports JSON `file_path` upload via `POST /sources/upload`
 for Mac-local smoke tests where the bridge can already see the file path.
 
+## Local Verification Without KOReader
+
+The repository includes a Lua smoke verifier with lightweight KOReader stubs:
+
+```sh
+uv run --with lupa scripts/verify-plugin-lua.py
+```
+
+This checks plugin loading, Tools-menu registration, and highlight-menu
+registration. It does not replace testing inside KOReader on a real device or
+desktop/emulator build.
+
 ## Reference Pattern
 
 The first plugin implementation should follow the same broad KOReader pattern
