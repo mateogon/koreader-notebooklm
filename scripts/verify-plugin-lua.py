@@ -262,8 +262,14 @@ preload["json"] = function()
                     answer = "Mock answer from bridge",
                     notebook_id = "created-notebook",
                     adapter = "mock",
+                    sources_used = { "source-1" },
+                    citations = { ["1"] = "source-1" },
                     references = {
-                        { title = "Book source" },
+                        {
+                            source_id = "source-1",
+                            citation_number = 1,
+                            cited_text = "Reference text from uploaded source",
+                        },
                     },
                 }
             end
@@ -349,6 +355,10 @@ def main() -> None:
         file:close()
         assert(content:find("Mock answer from bridge", 1, true), "answer content is missing")
         assert(content:find("Highlighted passage", 1, true), "highlight content is missing")
+        assert(content:find("## Sources used", 1, true), "sources used section is missing")
+        assert(content:find("source%-1"), "source id is missing")
+        assert(content:find("Reference text from uploaded source", 1, true), "cited text is missing")
+        assert(content:find("## Citations", 1, true), "citations section is missing")
 
         plugin.notebooklm_ui:show_custom_question("Custom highlighted passage")
         local custom_dialog = plugin.notebooklm_ui.input_dialog

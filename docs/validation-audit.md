@@ -69,6 +69,7 @@ Coverage relevance:
 - ask flow
 - answer file creation
 - answer viewer open call
+- source/reference/citation rendering
 - offline bridge error display
 
 This uses lightweight Lua stubs, not real KOReader widgets.
@@ -124,7 +125,7 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Preset prompts | Done | `prompts.lua`; `main.lua` prompt buttons |
 | Custom question | Done, stub-verified | `ui.lua` custom dialog; Lua verifier invokes custom ask callback |
 | Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke |
-| Scrollable answer view | Implemented, stub-verified | `TextViewer.openFile`; Lua verifier |
+| Scrollable answer view | Done, stub-verified | `TextViewer.openFile`; Lua verifier checks answer, source, reference, and citation output |
 | Offline bridge error display | Done, stub-verified | Lua verifier forces network error and checks status dialog text |
 | Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke |
 | Real EPUB accepted by `nlm` path | Done | `scripts/smoke-real-epub.sh` run on 2026-05-26 |

@@ -458,10 +458,23 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
             selected_text = highlighted_text,
             answer = response.answer,
             notebook_id = response.notebook_id or link.notebook_id,
+            sources_used = response.sources_used,
             references = response.references,
             citations = response.citations,
         })
     end)
+end
+
+local function reference_label(reference, index)
+    local citation_number = reference.citation_number or index
+    local label = "[" .. tostring(citation_number) .. "]"
+    if reference.title and reference.title ~= "" then
+        return label .. " " .. tostring(reference.title)
+    end
+    if reference.source_id and reference.source_id ~= "" then
+        return label .. " Source " .. tostring(reference.source_id)
+    end
+    return label .. " Reference"
 end
 
 function NotebookLMUI:show_answer(result)
@@ -480,12 +493,43 @@ function NotebookLMUI:show_answer(result)
         "",
         tostring(result.answer or ""),
     }
+    if type(result.sources_used) == "table" and #result.sources_used > 0 then
+        table.insert(lines, "")
+        table.insert(lines, "## Sources used")
+        table.insert(lines, "")
+        for _, source_id in ipairs(result.sources_used) do
+            table.insert(lines, "- " .. tostring(source_id))
+        end
+    end
+
     if type(result.references) == "table" and #result.references > 0 then
         table.insert(lines, "")
         table.insert(lines, "## References")
         table.insert(lines, "")
         for index, reference in ipairs(result.references) do
-            table.insert(lines, string.format("%d. %s", index, tostring(reference.title or reference.text or reference.id or "Reference")))
+            table.insert(lines, string.format("%d. %s", index, reference_label(reference, index)))
+            local cited_text = reference.cited_text or reference.text
+            if cited_text and cited_text ~= "" then
+                table.insert(lines, "")
+                table.insert(lines, "> " .. tostring(cited_text):gsub("\n", "\n> "))
+                table.insert(lines, "")
+            end
+        end
+    end
+
+    if type(result.citations) == "table" then
+        local citation_lines = {}
+        for citation, source_id in pairs(result.citations) do
+            table.insert(citation_lines, "[" .. tostring(citation) .. "] " .. tostring(source_id))
+        end
+        if #citation_lines > 0 then
+            table.sort(citation_lines)
+            table.insert(lines, "")
+            table.insert(lines, "## Citations")
+            table.insert(lines, "")
+            for _, citation in ipairs(citation_lines) do
+                table.insert(lines, "- " .. citation)
+            end
         end
     end
 
