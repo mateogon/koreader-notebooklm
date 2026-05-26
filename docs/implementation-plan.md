@@ -337,9 +337,11 @@ Output:
 - test health, link, create, upload, and ask from KOReader
 - collect KOReader log locations and common errors
 
-Status: setup docs are updated and `docs/validation-audit.md` contains a
-device/emulator acceptance checklist. Manual KOReader device/emulator
-validation is still required.
+Status: setup docs are updated and `docs/validation-audit.md` contains the
+validation record plus a device/emulator acceptance checklist. The macOS
+KOReader runtime has been validated in mock mode, including setup, source
+upload, highlighted preset ask, highlighted custom ask, and answer viewing.
+Physical Kindle/Android validation is still required.
 
 ### Phase 7 - Portability Pass
 
@@ -379,3 +381,6 @@ The next useful milestone is complete when:
 4. A custom question can be sent for the same highlighted passage.
 5. The answer is readable inside KOReader.
 6. UI code depends on `client.lua`, not directly on HTTP details.
+
+Status: complete for the current macOS/mock MVP. The same flow still needs a
+physical Kindle/Android pass and a KOReader UI pass against the `nlm` adapter.

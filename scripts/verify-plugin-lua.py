@@ -357,6 +357,25 @@ def main() -> None:
         settings_menu.sub_item_table[3].callback()
         assert(plugin.settings:read("show_prompt_buttons") == true, "prompt button toggle did not re-enable prompt buttons")
 
+        local unsafe_value = function() return "unsafe" end
+        local sanitized_link = plugin.storage:save_link(plugin.ui, {
+            notebook_id = "unsafe-notebook",
+            notebook_title = unsafe_value,
+            title = unsafe_value,
+            author = unsafe_value,
+            path = unsafe_value,
+            source_id = unsafe_value,
+            linked_at = unsafe_value,
+        })
+        assert(sanitized_link.notebook_id == "unsafe-notebook", "string link field was not preserved")
+        assert(sanitized_link.notebook_title == nil, "function notebook title was not dropped")
+        assert(sanitized_link.title == "Book", "unsafe title did not fall back to book title")
+        assert(sanitized_link.author == "Author", "unsafe author did not fall back to book author")
+        assert(sanitized_link.path == "/tmp/book.epub", "unsafe path did not fall back to book path")
+        assert(sanitized_link.source_id == nil, "function source id was not dropped")
+        assert(type(sanitized_link.linked_at) == "string", "unsafe linked_at did not fall back to an ISO string")
+        plugin.storage:clear_link(plugin.ui)
+
         local unlinked_item = highlight_buttons["notebooklm_ask"]({
             selected_text = { text = "Unlinked highlighted passage" },
         })

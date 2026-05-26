@@ -101,3 +101,25 @@ Runtime smoke used on 2026-05-26:
 5. Run `NotebookLM -> Current book setup -> Create+Upload`.
 6. Reopen `NotebookLM -> Status` and confirm the book is linked to
    `mock-created-notebook`.
+
+## KOReader Highlight UI Smoke
+
+After the runtime smoke, validate the real highlight menu manually:
+
+1. Start the bridge in mock mode.
+2. Open an EPUB in the KOReader macOS build.
+3. Select text in the page.
+4. Confirm the highlight menu shows `Ask NotebookLM` and the preset
+   `NotebookLM` prompt actions.
+5. Tap a preset, such as `Explica simple (NotebookLM)`.
+6. If the book is unlinked, complete `Create+Upload`.
+7. Confirm KOReader opens:
+
+   ```text
+   ~/Library/Application Support/koreader/settings/notebooklm-last-answer.md
+   ```
+
+8. Select text again and test `Ask NotebookLM -> Custom`.
+
+This was validated on 2026-05-26 with the generated runtime-smoke EPUB. The
+bridge received two successful `POST /ask` requests from the real KOReader UI.
