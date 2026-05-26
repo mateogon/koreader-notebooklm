@@ -16,6 +16,16 @@ Typical target paths:
 - Kindle: `/mnt/us/koreader/plugins/notebooklm.koplugin`
 - Desktop/dev KOReader checkout: `koreader/plugins/notebooklm.koplugin`
 
+Helper script:
+
+```sh
+scripts/install-plugin-dev.sh /path/to/koreader/plugins
+scripts/install-plugin-dev.sh /mnt/us/koreader/plugins --copy
+```
+
+Use symlink mode for local desktop/dev checkouts. Use `--copy` for mounted
+devices where symlinks may not work as expected.
+
 Restart KOReader after installing the plugin.
 
 ## Configure The Bridge
@@ -67,9 +77,31 @@ The repository includes a Lua smoke verifier with lightweight KOReader stubs:
 uv run --with lupa scripts/verify-plugin-lua.py
 ```
 
-This checks plugin loading, Tools-menu registration, and highlight-menu
-registration. It does not replace testing inside KOReader on a real device or
-desktop/emulator build.
+This checks plugin loading, Tools-menu registration, highlight-menu
+registration, create-notebook flow, upload flow, book-link persistence, and
+answer-viewer output against stubbed KOReader and bridge APIs. It does not
+replace testing inside KOReader on a real device or desktop/emulator build.
+
+## Debugging
+
+Useful checks:
+
+```sh
+uv run --with lupa scripts/verify-plugin-lua.py
+cd bridge && uv run --extra dev pytest
+scripts/smoke-bridge.sh
+```
+
+On Kindle, inspect KOReader logs after restart and plugin use:
+
+```sh
+/mnt/us/koreader/crash.log
+/mnt/us/koreader/./crash.log
+```
+
+Exact log paths can vary by KOReader install and launch method. Search the
+KOReader directory for `crash.log` or recent `.log` files if the default path is
+not present.
 
 ## Reference Pattern
 

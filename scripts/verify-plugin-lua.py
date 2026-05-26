@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Load the KOReader plugin with lightweight Lua stubs.
+"""Exercise the KOReader plugin with lightweight Lua stubs.
 
 This does not replace device/emulator testing. It catches broken `require`
-paths, syntax errors, and basic plugin initialization failures without needing
-a runnable KOReader desktop build.
+paths, syntax errors, basic plugin initialization failures, and the main
+link/upload/ask control flow without needing a runnable KOReader desktop build.
 """
 
 from __future__ import annotations
@@ -141,9 +141,42 @@ preload["luasettings"] = function()
 end
 
 preload["socket.http"] = function()
+    _G.__http_requests = {}
+    _G.__linked_book = nil
     return {
-        request = function()
-            return true, 200, {}, "OK"
+        request = function(req)
+            local url = req.url or ""
+            local method = req.method or "GET"
+            table.insert(_G.__http_requests, { method = method, url = url })
+
+            local body = "OK"
+            local code = 200
+            if url:find("/health", 1, true) then
+                body = "HEALTH"
+            elseif url:find("/notebooks", 1, true) and method == "GET" then
+                body = "NOTEBOOKS"
+            elseif url:find("/notebooks", 1, true) and method == "POST" then
+                body = "CREATE_NOTEBOOK"
+            elseif url:find("/books/link", 1, true) then
+                _G.__linked_book = true
+                body = "LINK_BOOK"
+            elseif url:find("/books/", 1, true) then
+                if _G.__linked_book then
+                    body = "LINK_BOOK"
+                else
+                    body = "NOT_FOUND"
+                    code = 404
+                end
+            elseif url:find("/sources/upload%-file", 1, false) then
+                body = "UPLOAD_SOURCE"
+            elseif url:find("/ask", 1, true) then
+                body = "ASK"
+            end
+
+            if req.sink then
+                req.sink(body)
+            end
+            return true, code, {}, code == 200 and "OK" or "Not Found"
         end,
     }
 end
@@ -181,13 +214,65 @@ end
 preload["json"] = function()
     return {
         encode = function() return "{}" end,
-        decode = function() return { ok = true } end,
+        decode = function(value)
+            if value == "HEALTH" then
+                return { ok = true, adapter = "mock" }
+            elseif value == "NOTEBOOKS" then
+                return {
+                    ok = true,
+                    notebooks = {
+                        { id = "mock-notebook", title = "Mock Notebook", source_count = 1 },
+                    },
+                }
+            elseif value == "CREATE_NOTEBOOK" then
+                return {
+                    ok = true,
+                    notebook = { id = "created-notebook", title = "Created Notebook", source_count = 0 },
+                    adapter = "mock",
+                }
+            elseif value == "LINK_BOOK" then
+                return {
+                    ok = true,
+                    book = {
+                        book_id = "book-stub",
+                        notebook_id = "created-notebook",
+                        notebook_title = "Created Notebook",
+                        title = "Book",
+                        author = "Author",
+                        path = "/tmp/book.epub",
+                        source_id = "uploaded-source",
+                    },
+                }
+            elseif value == "UPLOAD_SOURCE" then
+                return {
+                    ok = true,
+                    source_id = "uploaded-source",
+                    title = "Book",
+                    notebook_id = "created-notebook",
+                    adapter = "mock",
+                }
+            elseif value == "ASK" then
+                return {
+                    ok = true,
+                    answer = "Mock answer from bridge",
+                    notebook_id = "created-notebook",
+                    adapter = "mock",
+                    references = {
+                        { title = "Book source" },
+                    },
+                }
+            end
+            return { ok = true }
+        end,
     }
 end
 '''
 
 
 def main() -> None:
+    Path("/tmp/book.epub").write_bytes(b"stub epub")
+    Path("/tmp/notebooklm-last-answer.md").unlink(missing_ok=True)
+
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(f'package.path = "{PLUGIN_DIR}/?.lua;" .. package.path')
     lua.execute(STUBS)
@@ -231,6 +316,26 @@ def main() -> None:
         local menu = {}
         plugin:addToMainMenu(menu)
         assert(menu.notebooklm, "missing NotebookLM tools menu")
+
+        plugin.notebooklm_ui:show_status()
+        plugin.notebooklm_ui:create_notebook("Created Notebook", true)
+        local link = plugin.storage:get_link(plugin.ui)
+        assert(link and link.notebook_id == "created-notebook", "book link was not saved")
+        assert(link.source_id == "uploaded-source", "uploaded source id was not saved")
+
+        plugin.notebooklm_ui:ask_with_prompt(
+            "Highlighted passage",
+            "Explain this passage simply.",
+            "Explica simple"
+        )
+        local viewer = require("ui/widget/textviewer")
+        assert(viewer.last_opened == "/tmp/notebooklm-last-answer.md", "answer viewer was not opened")
+        local file = io.open(viewer.last_opened, "r")
+        assert(file, "answer file was not written")
+        local content = file:read("*all")
+        file:close()
+        assert(content:find("Mock answer from bridge", 1, true), "answer content is missing")
+        assert(content:find("Highlighted passage", 1, true), "highlight content is missing")
         '''
     )
     print("plugin runtime smoke ok")
