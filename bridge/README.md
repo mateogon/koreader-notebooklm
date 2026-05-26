@@ -44,6 +44,12 @@ With the bridge running in `mock` mode, run the full plugin-shaped smoke flow:
 ../scripts/smoke-plugin-flow.sh
 ```
 
+With the bridge running in real `nlm` mode, run the protected EPUB smoke:
+
+```bash
+KOREADER_NOTEBOOKLM_REAL_SMOKE=1 ../scripts/smoke-real-epub.sh
+```
+
 Endpoints:
 
 - `GET /health`

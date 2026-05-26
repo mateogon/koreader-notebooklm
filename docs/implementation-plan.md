@@ -181,6 +181,7 @@ POST /notebooks
 GET /books/{book_id}
 POST /books/link
 POST /sources/upload
+POST /sources/upload-file
 POST /ask
 ```
 
@@ -289,9 +290,11 @@ Output:
 - source id is stored with book metadata
 - EPUB support is validated instead of assumed
 
-Status: multipart device-to-bridge upload is implemented. EPUB support still
-depends on the active NotebookLM adapter/`nlm` behavior and must be validated
-with a real EPUB.
+Status: multipart device-to-bridge upload is implemented. EPUB support was
+validated against the real `nlm` adapter with a generated EPUB smoke source on
+2026-05-26. The smoke created a temporary notebook, uploaded the EPUB through
+`POST /sources/upload-file`, asked through `POST /ask`, received cited answer
+data, and deleted the temporary notebook.
 
 ### Phase 4 - Highlight Ask Flow
 

@@ -47,12 +47,28 @@ Local source checkout exists:
 
 Conclusion: the installed MCP server, the `nlm` CLI, and the local repo are the same project ecosystem. The current command-line install is not an editable install from the checkout; it is a `uv tool` install.
 
+## Real EPUB Smoke - 2026-05-26
+
+Validated with `notebooklm-mcp-cli` / `nlm` 0.6.9:
+
+- bridge mode: `KOREADER_NOTEBOOKLM_ADAPTER=nlm`
+- source path: generated minimal EPUB
+- upload endpoint: `POST /sources/upload-file`
+- NotebookLM adapter command path: `nlm source add --file ... --wait`
+- ask endpoint: `POST /ask`
+- result: NotebookLM returned an answer with citation/reference data pointing
+  to the uploaded EPUB source
+- cleanup: temporary smoke notebook was deleted with `nlm notebook delete --confirm`
+
+This proves that the current bridge path can upload EPUB files through `nlm`
+and query them. It does not prove KOReader-device upload runtime behavior yet.
+
 ## Research Tasks
 
-- Verify current `notebooklm-mcp-cli` installation and CLI commands. Initial install discovery is done; live NotebookLM query still needs a controlled test.
-- Inspect whether `nlm notebook query` supports non-interactive output suitable for a bridge.
+- Verify current `notebooklm-mcp-cli` installation and CLI commands. Done for the current local install.
+- Inspect whether `nlm notebook query` supports non-interactive output suitable for a bridge. Done for JSON query output.
 - Inspect auth storage paths and document how not to commit them.
 - Verify source upload formats, starting with PDF.
-- Check whether EPUB is accepted directly or needs conversion/extraction.
+- Check whether EPUB is accepted directly or needs conversion/extraction. Done for a generated minimal EPUB through the current `nlm` path.
 - Decide whether to vendor, depend on, or only call `notebooklm-mcp-cli`.
 - Keep notes on internal NotebookLM endpoint fragility in `research/notebooklm-mcp-cli-files.md`.
