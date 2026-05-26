@@ -57,6 +57,14 @@ local function decode_json(body)
     return decoded, nil
 end
 
+local function normalize_status(code, status, fallback)
+    local status_code = tonumber(code)
+    if not status_code then
+        return nil, tostring(status or code or fallback or "Bridge request failed.")
+    end
+    return status_code, nil
+end
+
 function Http.encode(value)
     if not json then
         return nil, "No JSON module found. Expected `json` or `rapidjson`."
@@ -92,11 +100,12 @@ function Http.get(base_url, path, timeout)
     end)
     local body = table.concat(response)
 
-    if not code then
-        return nil, status or "Bridge request failed."
+    local status_code, status_err = normalize_status(code, status, "Bridge request failed.")
+    if not status_code then
+        return nil, status_err
     end
-    if tonumber(code) < 200 or tonumber(code) >= 300 then
-        return nil, string.format("Bridge GET %s failed: %s %s", path, tostring(code), body), tonumber(code)
+    if status_code < 200 or status_code >= 300 then
+        return nil, string.format("Bridge GET %s failed: %s %s", path, tostring(status_code), body), status_code
     end
     return decode_json(body)
 end
@@ -128,11 +137,12 @@ function Http.post(base_url, path, payload, timeout)
     end)
     local response_body = table.concat(response)
 
-    if not code then
-        return nil, status or "Bridge request failed."
+    local status_code, status_err = normalize_status(code, status, "Bridge request failed.")
+    if not status_code then
+        return nil, status_err
     end
-    if tonumber(code) < 200 or tonumber(code) >= 300 then
-        return nil, string.format("Bridge POST %s failed: %s %s", path, tostring(code), response_body), tonumber(code)
+    if status_code < 200 or status_code >= 300 then
+        return nil, string.format("Bridge POST %s failed: %s %s", path, tostring(status_code), response_body), status_code
     end
     return decode_json(response_body)
 end
@@ -186,11 +196,12 @@ function Http.post_multipart_file(base_url, path, fields, file_field, file_path,
     end)
     local response_body = table.concat(response)
 
-    if not code then
-        return nil, status or "Bridge upload request failed."
+    local status_code, status_err = normalize_status(code, status, "Bridge upload request failed.")
+    if not status_code then
+        return nil, status_err
     end
-    if tonumber(code) < 200 or tonumber(code) >= 300 then
-        return nil, string.format("Bridge upload %s failed: %s %s", path, tostring(code), response_body), tonumber(code)
+    if status_code < 200 or status_code >= 300 then
+        return nil, string.format("Bridge upload %s failed: %s %s", path, tostring(status_code), response_body), status_code
     end
     return decode_json(response_body)
 end

@@ -151,7 +151,7 @@ preload["socket.http"] = function()
             table.insert(_G.__http_requests, { method = method, url = url })
 
             if _G.__force_network_error then
-                return nil, nil, nil, "network unreachable"
+                return nil, "network unreachable"
             end
 
             local body = "OK"
