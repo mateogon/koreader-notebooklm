@@ -60,12 +60,16 @@ Coverage relevance:
 - plugin loads
 - Tools-menu registration
 - highlight-menu registration
+- link-existing notebook picker flow
 - create-notebook flow
 - multipart upload flow
 - book-link persistence
+- preset prompt ask flow
+- custom question ask flow
 - ask flow
 - answer file creation
 - answer viewer open call
+- offline bridge error display
 
 This uses lightweight Lua stubs, not real KOReader widgets.
 
@@ -113,14 +117,15 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Bridge URL and settings are configurable | Done | `settings.lua`; `NotebookLM -> Bridge URL` |
 | Book id is derived and link metadata stored locally | Done | `storage.lua`; Lua verifier exercises persistence |
 | Bridge stores book-to-notebook mapping | Done | `/books/link`; pytest and smoke flow |
-| Link existing notebook | Implemented, stub-verified | `ui.lua` notebook picker; Lua verifier covers client path indirectly |
+| Link existing notebook | Done, stub-verified | `ui.lua` notebook picker; Lua verifier invokes picker callback and checks saved link |
 | Create notebook | Done | `/notebooks`; Lua verifier and smoke scripts |
 | Create notebook and upload source | Done | `ui.lua`; `/sources/upload-file`; Lua verifier; real EPUB smoke |
 | Highlight menu actions | Implemented, stub-verified | `main.lua`; Lua verifier |
 | Preset prompts | Done | `prompts.lua`; `main.lua` prompt buttons |
-| Custom question | Implemented, syntax/stub verified | `ui.lua` custom dialog |
+| Custom question | Done, stub-verified | `ui.lua` custom dialog; Lua verifier invokes custom ask callback |
 | Ask bridge endpoint | Done | `/ask`; pytest; mock and real smoke |
 | Scrollable answer view | Implemented, stub-verified | `TextViewer.openFile`; Lua verifier |
+| Offline bridge error display | Done, stub-verified | Lua verifier forces network error and checks status dialog text |
 | Multipart upload for device-to-bridge | Done | `/sources/upload-file`; pytest; mock and real smoke |
 | Real EPUB accepted by `nlm` path | Done | `scripts/smoke-real-epub.sh` run on 2026-05-26 |
 | KOReader real device/emulator runtime | Not proven | No runnable local KOReader environment available |

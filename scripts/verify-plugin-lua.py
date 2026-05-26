@@ -143,11 +143,16 @@ end
 preload["socket.http"] = function()
     _G.__http_requests = {}
     _G.__linked_book = nil
+    _G.__force_network_error = false
     return {
         request = function(req)
             local url = req.url or ""
             local method = req.method or "GET"
             table.insert(_G.__http_requests, { method = method, url = url })
+
+            if _G.__force_network_error then
+                return nil, nil, nil, "network unreachable"
+            end
 
             local body = "OK"
             local code = 200
@@ -318,6 +323,14 @@ def main() -> None:
         assert(menu.notebooklm, "missing NotebookLM tools menu")
 
         plugin.notebooklm_ui:show_status()
+
+        plugin.notebooklm_ui:show_notebook_picker("", nil)
+        local picker = plugin.notebooklm_ui.input_dialog
+        assert(picker and picker.buttons and picker.buttons[1] and picker.buttons[1][1], "notebook picker did not render")
+        picker.buttons[1][1].callback()
+        local existing_link = plugin.storage:get_link(plugin.ui)
+        assert(existing_link and existing_link.notebook_id == "mock-notebook", "existing notebook link was not saved")
+
         plugin.notebooklm_ui:create_notebook("Created Notebook", true)
         local link = plugin.storage:get_link(plugin.ui)
         assert(link and link.notebook_id == "created-notebook", "book link was not saved")
@@ -336,6 +349,25 @@ def main() -> None:
         file:close()
         assert(content:find("Mock answer from bridge", 1, true), "answer content is missing")
         assert(content:find("Highlighted passage", 1, true), "highlight content is missing")
+
+        plugin.notebooklm_ui:show_custom_question("Custom highlighted passage")
+        local custom_dialog = plugin.notebooklm_ui.input_dialog
+        assert(custom_dialog and custom_dialog.buttons[1][2], "custom question dialog did not render")
+        custom_dialog.input = "Custom question about this passage"
+        custom_dialog.buttons[1][2].callback()
+        local custom_viewer = require("ui/widget/textviewer")
+        local custom_file = io.open(custom_viewer.last_opened, "r")
+        assert(custom_file, "custom answer file was not written")
+        local custom_content = custom_file:read("*all")
+        custom_file:close()
+        assert(custom_content:find("Custom highlighted passage", 1, true), "custom highlight content is missing")
+        assert(custom_content:find("Prompt: Custom", 1, true), "custom prompt label is missing")
+
+        _G.__force_network_error = true
+        plugin.notebooklm_ui:show_status()
+        local uimanager = require("ui/uimanager")
+        local last = uimanager.shown[#uimanager.shown]
+        assert(last and last.text and last.text:find("network unreachable", 1, true), "offline bridge error was not surfaced")
         '''
     )
     print("plugin runtime smoke ok")
