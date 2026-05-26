@@ -1,8 +1,6 @@
--- TODO: Add KOReader plugin metadata.
-
 return {
     name = "notebooklm",
     fullname = "KOReader NotebookLM",
-    description = "Scaffold placeholder for KOReader NotebookLM integration.",
+    description = "Ask Google NotebookLM about highlighted text through a local bridge.",
+    version = 0.1,
 }
-

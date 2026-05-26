@@ -2,7 +2,7 @@
 
 `koreader-notebooklm` is a KOReader plugin and local bridge project that will let a reader send selected text from KOReader to Google NotebookLM and view the response inside KOReader.
 
-Current status: bridge implementation exists and can run in `mock` mode or real `nlm` mode. KOReader highlight-menu integration is not implemented yet.
+Current status: bridge implementation exists and can run in `mock` mode or real `nlm` mode. The KOReader plugin now has an initial highlight-menu and book-linking implementation that still needs real KOReader device/emulator validation.
 
 Target architecture:
 
@@ -22,6 +22,7 @@ NotebookLM auth files, cookies, and generated auth artifacts such as `auth.json`
 
 ## Planning Docs
 
+- [Implementation plan](docs/implementation-plan.md)
 - [MVP plan](docs/mvp-plan.md)
 - [Context from planning chat](docs/context-from-chatgpt.md)
 - [NotebookLM research notes](docs/notebooklm-research.md)

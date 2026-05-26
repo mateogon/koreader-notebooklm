@@ -263,6 +263,8 @@ Output:
 - Tools-menu action can show bridge health/status
 - no highlight workflow yet
 
+Status: implemented in the initial plugin pass.
+
 ### Phase 2 - Book Link Setup
 
 Implement current-book metadata and notebook linking.
@@ -275,6 +277,8 @@ Output:
 - link current book to selected/created notebook
 - persist mapping locally and in bridge
 
+Status: implemented in the initial plugin pass.
+
 ### Phase 3 - Source Upload Setup
 
 Implement create-and-upload flow.
@@ -284,6 +288,10 @@ Output:
 - multipart/device upload is added after local upload is stable
 - source id is stored with book metadata
 - EPUB support is validated instead of assumed
+
+Status: multipart device-to-bridge upload is implemented. EPUB support still
+depends on the active NotebookLM adapter/`nlm` behavior and must be validated
+with a real EPUB.
 
 ### Phase 4 - Highlight Ask Flow
 
@@ -295,6 +303,8 @@ Output:
 - preset prompts can ask immediately
 - custom question opens input dialog
 - selected text and book context are sent to `/ask`
+
+Status: implemented in the initial plugin pass.
 
 ### Phase 5 - Answer Viewer
 
@@ -310,6 +320,9 @@ Output:
   - references/citations when available
 - lightweight Markdown rendering is evaluated after plain text works
 
+Status: initial viewer writes a Markdown file under KOReader settings and opens
+it with `TextViewer.openFile`.
+
 ### Phase 6 - Install And Debug Loop
 
 Document the development workflow.
@@ -321,6 +334,9 @@ Output:
 - test health, link, create, upload, and ask from KOReader
 - collect KOReader log locations and common errors
 
+Status: setup docs are updated. Manual KOReader device/emulator validation is
+still required.
+
 ### Phase 7 - Portability Pass
 
 Prepare for mobile/Termux and future all-in-Kindle.
@@ -330,6 +346,9 @@ Output:
 - bridge URL can point to LAN IP
 - `client.lua` is the only backend boundary used by UI
 - internal backend remains possible without rewriting dialogs
+
+Status: plugin UI calls `client.lua`; bridge HTTP is isolated behind
+`http.lua`. The internal backend is not implemented.
 
 ## Testing Strategy
 

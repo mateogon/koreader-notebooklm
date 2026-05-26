@@ -62,10 +62,12 @@ class AskResponse(BaseModel):
 class BookLinkRequest(BaseModel):
     book_id: str = Field(min_length=1)
     notebook_id: str = Field(min_length=1)
+    notebook_title: str | None = None
     title: str | None = None
     author: str | None = None
     path: str | None = None
     source_id: str | None = None
+    linked_at: str | None = None
 
 
 class BookLinkResponse(BaseModel):

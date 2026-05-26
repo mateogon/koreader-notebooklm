@@ -68,10 +68,16 @@ Later-phase implications:
 
 ## Open Questions For Implementation
 
-- Which local bridge host should be the default for device testing:
+- Local bridge host default:
   `http://127.0.0.1:8765` for emulator/local desktop, or a Mac LAN IP for a
   physical Kindle/Android device?
-- Which KOReader JSON module is most portable across target devices:
-  `json` or `rapidjson`?
-- Should the first response view use `TextViewer`, `InfoMessage`, or a small
-  custom viewer?
+- JSON module choice:
+  first try `json`, then fall back to `rapidjson`. The reference plugins use
+  both, and the plugin should not care which one the KOReader build provides.
+- First response view:
+  write the answer to `notebooklm-last-answer.md` under KOReader settings and
+  open it with `TextViewer.openFile`. This gives a scrollable response without
+  copying a large custom viewer.
+- Upload transport:
+  use multipart upload from KOReader to bridge by default. Keep JSON
+  `file_path` upload as a bridge-local fallback for Mac smoke tests.

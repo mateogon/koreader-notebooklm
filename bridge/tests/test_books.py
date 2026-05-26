@@ -15,8 +15,10 @@ def test_book_link_round_trip(tmp_path):
         json={
             "book_id": "book-1",
             "notebook_id": "notebook-1",
+            "notebook_title": "Notebook One",
             "title": "Book One",
             "source_id": "source-1",
+            "linked_at": "2026-05-26T00:00:00Z",
         },
     )
 
@@ -27,6 +29,7 @@ def test_book_link_round_trip(tmp_path):
 
     assert get_response.status_code == 200
     assert get_response.json()["book"]["source_id"] == "source-1"
+    assert get_response.json()["book"]["notebook_title"] == "Notebook One"
 
 
 def test_book_get_returns_404_for_missing_mapping(tmp_path):

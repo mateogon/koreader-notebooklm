@@ -46,7 +46,12 @@ Endpoints:
 - `GET /books/{book_id}`
 - `POST /books/link`
 - `POST /sources/upload`
+- `POST /sources/upload-file`
 - `POST /ask`
+
+`POST /sources/upload` is for bridge-local file paths. `POST
+/sources/upload-file` is multipart upload for KOReader devices that need to
+send the book file to the bridge.
 
 ## Auth
 
