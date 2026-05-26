@@ -21,4 +21,9 @@ local HTTP bridge, but a future Termux/small-server bridge or experimental
 all-in-Kindle client should be able to replace the transport behind the same
 client methods.
 
+The plugin loads its own local modules with `dofile(self.path .. "/...")`
+instead of generic `require("ui")`, `require("settings")`, and similar names.
+That keeps the plugin from polluting KOReader's global `package.loaded` cache
+with common module names.
+
 See [implementation plan](implementation-plan.md) for the current plugin plan.

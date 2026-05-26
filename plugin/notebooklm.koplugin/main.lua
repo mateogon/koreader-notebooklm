@@ -4,16 +4,14 @@ local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
-local Client = require("client")
-local NotebookLMUI = require("ui")
-local Prompts = require("prompts")
-local Settings = require("settings")
-local Storage = require("storage")
-
 local NotebookLM = InputContainer:new{
     name = "notebooklm",
     is_doc_only = false,
 }
+
+local function load_plugin_module(plugin, filename)
+    return dofile(plugin.path .. "/" .. filename)
+end
 
 function NotebookLM:onDispatcherRegisterActions()
     local Dispatcher = require("dispatcher")
@@ -32,14 +30,23 @@ function NotebookLM:onDispatcherRegisterActions()
 end
 
 function NotebookLM:init()
+    local Client = load_plugin_module(self, "client.lua")
+    local Http = load_plugin_module(self, "http.lua")
+    local NotebookLMUI = load_plugin_module(self, "ui.lua")
+    local Prompts = load_plugin_module(self, "prompts.lua")
+    local Settings = load_plugin_module(self, "settings.lua")
+    local Storage = load_plugin_module(self, "storage.lua")
+
     self.settings = Settings:open()
     self.storage = Storage:open()
-    self.client = Client:new(self.settings)
+    self.prompts = Prompts
+    self.client = Client:new(self.settings, Http)
     self.notebooklm_ui = NotebookLMUI:new{
         plugin = self,
         client = self.client,
         storage = self.storage,
         settings = self.settings,
+        prompts = self.prompts,
     }
 
     self:onDispatcherRegisterActions()
@@ -68,7 +75,7 @@ function NotebookLM:init()
         end)
 
         if self.settings:read("show_prompt_buttons") then
-            for _, prompt in ipairs(Prompts.presets) do
+            for _, prompt in ipairs(self.prompts.presets) do
                 local prompt_config = prompt
                 self.ui.highlight:addToHighlightDialog("notebooklm_" .. prompt_config.id, function(reader_highlight)
                     return {

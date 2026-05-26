@@ -290,6 +290,7 @@ def main() -> None:
     plugin = lua.execute(f'return dofile("{PLUGIN_DIR / "main.lua"}")')
 
     lua.globals().plugin = plugin
+    lua.globals().plugin.path = str(PLUGIN_DIR)
     lua.execute(
         r'''
         local menu_registered = false

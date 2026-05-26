@@ -115,6 +115,7 @@ This proves EPUB upload and query through the Mac bridge and `nlm` adapter.
 | Requirement | Status | Evidence |
 | --- | --- | --- |
 | UI code depends on `client.lua`, not direct HTTP | Done | `main.lua` and `ui.lua` call `client.lua`; `http.lua` owns transport |
+| Internal plugin modules avoid generic `require` cache collisions | Done | `main.lua` loads plugin-local modules through `dofile(self.path .. ...)`; `client.lua` receives `http.lua` by injection |
 | Bridge URL and settings are configurable | Done | `settings.lua`; `NotebookLM -> Bridge URL` |
 | Book id is derived and link metadata stored locally | Done | `storage.lua`; Lua verifier exercises persistence |
 | Bridge stores book-to-notebook mapping | Done | `/books/link`; pytest and smoke flow |

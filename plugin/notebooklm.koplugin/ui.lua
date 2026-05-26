@@ -7,8 +7,6 @@ local TextViewer = require("ui/widget/textviewer")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
-local Prompts = require("prompts")
-
 local NotebookLMUI = {}
 
 function NotebookLMUI:new(opts)
@@ -18,6 +16,7 @@ function NotebookLMUI:new(opts)
         client = opts.client,
         storage = opts.storage,
         settings = opts.settings,
+        prompts = opts.prompts,
         input_dialog = nil,
     }, { __index = self })
 end
@@ -349,7 +348,7 @@ end
 
 function NotebookLMUI:show_prompt_picker(highlighted_text)
     local rows = {}
-    for _, prompt in ipairs(Prompts.presets) do
+    for _, prompt in ipairs(self.prompts.presets) do
         table.insert(rows, {
             {
                 text = prompt.label,

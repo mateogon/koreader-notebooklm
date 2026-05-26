@@ -1,9 +1,7 @@
-local Http = require("http")
-
 local Client = {}
 
-function Client:new(settings)
-    return setmetatable({ settings = settings }, { __index = self })
+function Client:new(settings, http)
+    return setmetatable({ settings = settings, http = http }, { __index = self })
 end
 
 function Client:_bridge_url()
@@ -35,7 +33,7 @@ function Client:_get(path, timeout)
     if not ok then
         return nil, err
     end
-    return Http.get(self:_bridge_url(), path, timeout or self:_timeout())
+    return self.http.get(self:_bridge_url(), path, timeout or self:_timeout())
 end
 
 function Client:_post(path, payload)
@@ -43,7 +41,7 @@ function Client:_post(path, payload)
     if not ok then
         return nil, err
     end
-    return Http.post(self:_bridge_url(), path, payload, self:_timeout())
+    return self.http.post(self:_bridge_url(), path, payload, self:_timeout())
 end
 
 function Client:health()
@@ -59,7 +57,7 @@ function Client:create_notebook(title)
 end
 
 function Client:get_book(book_id)
-    local response, err, code = self:_get("/books/" .. Http.path_escape(book_id), self:_short_timeout())
+    local response, err, code = self:_get("/books/" .. self.http.path_escape(book_id), self:_short_timeout())
     if code == 404 then
         return nil, nil
     end
@@ -81,7 +79,7 @@ function Client:upload_source(notebook_id, source)
         if not filename or filename == "" then
             filename = source.file_path and source.file_path:match("([^/]+)$") or "source"
         end
-        return Http.post_multipart_file(
+        return self.http.post_multipart_file(
             self:_bridge_url(),
             "/sources/upload-file",
             {
