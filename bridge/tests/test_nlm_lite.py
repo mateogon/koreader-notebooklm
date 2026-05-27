@@ -245,6 +245,10 @@ def test_client_upload_file_uses_resumable_flow(tmp_path):
         calls.append(str(request.url))
         if "batchexecute" in str(request.url):
             assert request.url.params["rpcids"] == RPC_ADD_SOURCE_FILE
+            decoded = _decode_f_req(request.content.decode("utf-8"))
+            params = json.loads(decoded[0][0][1])
+            assert params[0] == [["Readable Source"]]
+            assert params[1] == "nb1"
             return httpx.Response(
                 200,
                 text=_batchexecute_response(RPC_ADD_SOURCE_FILE, [[["src-new"]]]),

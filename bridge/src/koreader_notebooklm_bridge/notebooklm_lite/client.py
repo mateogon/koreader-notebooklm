@@ -235,7 +235,7 @@ class NotebookLMLiteClient:
     def _register_file_source(self, notebook_id: str, filename: str) -> str:
         result = self._call_rpc(
             RPC_ADD_SOURCE_FILE,
-            [[filename], notebook_id, [2], [1, None, None, None, None, None, None, None, None, None, [1]]],
+            [[[filename]], notebook_id, [2], [1, None, None, None, None, None, None, None, None, None, [1]]],
             source_path=f"/notebook/{notebook_id}",
         )
         source_id = _unwrap_first(result)
