@@ -1,29 +1,146 @@
 # KOReader NotebookLM
 
-`koreader-notebooklm` is a KOReader plugin and local bridge project that will let a reader send selected text from KOReader to Google NotebookLM and view the response inside KOReader.
-
-Current status: bridge implementation exists and can run in `mock` mode or real `nlm` mode. The KOReader plugin now has an initial highlight-menu and book-linking implementation that still needs real KOReader device/emulator validation.
-
-Target architecture:
+KOReader NotebookLM is a KOReader plugin plus a local Python bridge for sending selected text from KOReader to Google NotebookLM and reading the answer inside KOReader.
 
 ```text
 KOReader Lua plugin -> local HTTP bridge -> NotebookLM adapter
 ```
 
-For now, the bridge is shaped for local macOS development while keeping the structure portable enough for future Android/Termux or small local server setups.
+The current bridge target is macOS. The structure is intentionally kept portable so a future Android/Termux or small local-server setup can reuse the same plugin boundary.
 
-## Non-goals for now
+## Current Status
 
-- No MCP implementation.
-- No direct NotebookLM authentication inside this repo. Real mode delegates auth to the local `nlm` CLI profile.
-- No all-in-Kindle implementation.
+This is an early prototype, not a release.
 
-NotebookLM auth files, cookies, and generated auth artifacts such as `auth.json` must never be committed.
+Implemented and locally validated:
 
-## Planning Docs
+- KOReader plugin menu entry for selected text.
+- Book-to-notebook linking and relinking.
+- Preset and custom prompts.
+- Local answer history in KOReader.
+- Optional automatic answer opening.
+- Local FastAPI bridge with `mock` and `nlm` adapters.
+- Background `/ask/jobs` flow so long NotebookLM answers do not block KOReader.
+- Basic source upload path, including preserving file extensions for EPUB/PDF detection.
 
-- [Implementation plan](docs/implementation-plan.md)
+Known gaps:
+
+- Real Kindle/device validation is still pending.
+- Bridge LAN security token is not implemented yet.
+- Uploads for large books/PDFs still need memory and timeout hardening.
+- NotebookLM auth is delegated to the local `nlm` CLI profile.
+- No direct NotebookLM auth, no MCP implementation, and no all-in-Kindle client yet.
+
+## Repository Layout
+
+```text
+bridge/   Python FastAPI bridge and NotebookLM adapters
+plugin/   KOReader Lua plugin: notebooklm.koplugin
+docs/     Architecture, setup notes, API, roadmap, validation notes
+examples/ Example requests and config snippets
+scripts/  Dev and smoke-test helpers
+research/ Research notes and reference links
+```
+
+## Quick Start: macOS Development
+
+Install bridge dependencies:
+
+```sh
+cd bridge
+uv sync --extra dev
+```
+
+Run the bridge in mock mode:
+
+```sh
+KOREADER_NOTEBOOKLM_ADAPTER=mock ../scripts/run-bridge-dev.sh
+```
+
+Run the bridge in real `nlm` mode:
+
+```sh
+KOREADER_NOTEBOOKLM_ADAPTER=nlm \
+KOREADER_NOTEBOOKLM_NLM_COMMAND=/path/to/nlm \
+../scripts/run-bridge-dev.sh
+```
+
+The real mode assumes `nlm` is already installed and authenticated. This repo does not manage NotebookLM credentials.
+
+Install the plugin into a KOReader plugin directory:
+
+```sh
+scripts/install-plugin-dev.sh /path/to/koreader/plugins --copy
+```
+
+Then restart KOReader and configure the bridge URL if needed:
+
+```text
+http://127.0.0.1:8765
+```
+
+## Plugin Flow
+
+1. Select a passage in KOReader.
+2. Tap `NotebookLM`.
+3. Link the current book to a NotebookLM notebook if needed.
+4. Choose a preset prompt or enter a custom question.
+5. Continue reading while the bridge asks NotebookLM in the background.
+6. Open the answer automatically, or find it later under `NotebookLM answers`.
+
+## Security
+
+Do not commit NotebookLM auth files, cookies, local bridge data, books, downloaded sources, or generated answers.
+
+The `.gitignore` excludes common local artifacts, including:
+
+- `.env` files
+- `auth.json`, cookies, token and credential files
+- `bridge/data/`
+- local books such as `.epub`, `.pdf`, `.azw3`, `.kfx`
+- KOReader `.sdr` folders
+- generated NotebookLM answer files
+- downloaded reference repos
+
+When running the bridge on `0.0.0.0` for Kindle/Android testing, keep it on a trusted network. A local bridge token is planned but not implemented yet.
+
+## Useful Commands
+
+Run bridge tests:
+
+```sh
+cd bridge
+uv run --extra dev pytest
+```
+
+Run the Lua plugin smoke test:
+
+```sh
+uv run --with lupa scripts/verify-plugin-lua.py
+```
+
+Check the bridge:
+
+```sh
+curl http://127.0.0.1:8765/health
+```
+
+## Next Steps
+
+- Validate the async ask flow on KOReader macOS with real `nlm`.
+- Validate on a physical Kindle or Android/Termux KOReader setup.
+- Add an optional bridge API token for LAN use.
+- Improve upload handling for large files and PDFs.
+- Improve answer notification UX while jobs are running.
+- Harden book identity beyond path/title/author.
+- Keep the all-in-Kindle path as an experimental future direction.
+
+## Docs
+
+- [Architecture](docs/architecture.md)
+- [Bridge API](docs/api.md)
+- [macOS setup](docs/setup-mac.md)
+- [KOReader setup](docs/setup-koreader.md)
+- [Kindle setup](docs/setup-kindle.md)
+- [Roadmap](docs/roadmap.md)
 - [Validation audit](docs/validation-audit.md)
-- [MVP plan](docs/mvp-plan.md)
-- [Context from planning chat](docs/context-from-chatgpt.md)
-- [NotebookLM research notes](docs/notebooklm-research.md)

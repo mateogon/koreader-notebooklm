@@ -13,14 +13,41 @@ env/
 .env.*
 !.env.example
 auth.json
+auth.*.json
+*.auth.json
 cookies.txt
 *.cookies
+cookiejar*
+token.json
+tokens.json
+credentials.json
+client_secret*.json
+secrets/
+.secrets/
 
 # Local data
 *.sqlite
 *.sqlite3
 *.db
 data/
+bridge/data/
+
+# Books and personal source documents
+*.epub
+*.pdf
+*.mobi
+*.azw
+*.azw3
+*.kfx
+*.djvu
+*.cbz
+*.cbr
+*.docx
+*.rtf
+*.txt
+books/
+local-books/
+downloads/
 
 # Logs
 *.log
@@ -37,6 +64,9 @@ temp/
 
 # Local reference repos, not project dependencies
 vendor-references/
+external-references/
+external_references/
+reference-repos/
 
 # Generated context handoff packs
 docs/context-packs/
@@ -45,3 +75,9 @@ docs/context-packs/
 *.sdr/
 koreader-settings.local.lua
 plugin-test-output/
+notebooklm.lua
+notebooklm-books.lua
+notebooklm-answers.lua
+notebooklm-last-answer.md
+notebooklm-answer-*.md
+koreader-notebooklm-macos/
