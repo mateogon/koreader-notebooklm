@@ -87,9 +87,12 @@ function Client:upload_source(notebook_id, source)
         return nil, err
     end
     if self.settings:read("upload_mode") ~= "path" then
-        local filename = source.title
+        local filename = source.file_path and source.file_path:match("([^/]+)$") or nil
         if not filename or filename == "" then
-            filename = source.file_path and source.file_path:match("([^/]+)$") or "source"
+            filename = source.title
+        end
+        if not filename or filename == "" then
+            filename = "source"
         end
         return self.http.post_multipart_file(
             self:_bridge_url(),

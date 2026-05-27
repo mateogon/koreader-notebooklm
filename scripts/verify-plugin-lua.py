@@ -156,11 +156,23 @@ preload["socket.http"] = function()
     _G.__multipart_upload_seen = false
     _G.__path_upload_seen = false
     _G.__last_path_upload_payload = nil
+    _G.__last_request_body = nil
+    _G.__last_multipart_body = nil
     return {
         request = function(req)
             local url = req.url or ""
             local method = req.method or "GET"
             table.insert(_G.__http_requests, { method = method, url = url })
+
+            if req.source then
+                local chunks = {}
+                while true do
+                    local chunk = req.source()
+                    if chunk == nil then break end
+                    table.insert(chunks, chunk)
+                end
+                _G.__last_request_body = table.concat(chunks)
+            end
 
             if _G.__force_network_error then
                 return nil, "network unreachable"
@@ -189,6 +201,7 @@ preload["socket.http"] = function()
                 end
             elseif url:find("/sources/upload%-file", 1, false) then
                 _G.__multipart_upload_seen = true
+                _G.__last_multipart_body = _G.__last_request_body
                 body = "UPLOAD_SOURCE"
             elseif url:find("/sources/upload", 1, true) then
                 _G.__path_upload_seen = true
@@ -434,6 +447,8 @@ def main() -> None:
         assert(link and link.notebook_id == "created-notebook", "book link was not saved")
         assert(link.source_id == "uploaded-source", "uploaded source id was not saved")
         assert(_G.__multipart_upload_seen == true, "multipart upload endpoint was not used by default")
+        assert(_G.__last_multipart_body and _G.__last_multipart_body:find('filename="book.epub"', 1, true), "multipart upload did not preserve the source file extension")
+        assert(_G.__last_multipart_body and _G.__last_multipart_body:find('name="title"', 1, true), "multipart upload did not include the source title")
 
         _G.__multipart_upload_seen = false
         _G.__path_upload_seen = false
