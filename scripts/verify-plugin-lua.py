@@ -40,6 +40,14 @@ preload["gettext"] = function()
     return function(text) return text end
 end
 
+preload["logger"] = function()
+    return {
+        info = function() end,
+        warn = function() end,
+        dbg = function() end,
+    }
+end
+
 preload["dispatcher"] = function()
     return {
         actions = {},
@@ -94,6 +102,7 @@ preload["ui/widget/inputdialog"] = function()
 end
 
 preload["ui/widget/confirmbox"] = function() return class() end
+preload["ui/widget/buttondialog"] = function() return class() end
 preload["ui/widget/infomessage"] = function() return class() end
 preload["ui/widget/textviewer"] = function()
     return {
@@ -168,6 +177,9 @@ preload["socket.http"] = function()
             elseif url:find("/books/link", 1, true) then
                 _G.__linked_book = true
                 body = "LINK_BOOK"
+            elseif url:find("/books/", 1, true) and method == "DELETE" then
+                _G.__linked_book = false
+                body = "OK"
             elseif url:find("/books/", 1, true) then
                 if _G.__linked_book then
                     body = "LINK_BOOK"
@@ -294,6 +306,8 @@ end
 def main() -> None:
     Path("/tmp/book.epub").write_bytes(b"stub epub")
     Path("/tmp/notebooklm-last-answer.md").unlink(missing_ok=True)
+    for answer_file in Path("/tmp").glob("notebooklm-answer-*.md"):
+        answer_file.unlink(missing_ok=True)
 
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(f'package.path = "{PLUGIN_DIR}/?.lua;" .. package.path')
@@ -334,14 +348,15 @@ def main() -> None:
         }
         plugin:init()
         assert(menu_registered, "plugin did not register to main menu")
-        assert(highlight_buttons["notebooklm_ask"], "missing Ask NotebookLM highlight action")
-        assert(highlight_buttons["notebooklm_explain_simple"], "missing prompt highlight action")
+        assert(highlight_buttons["notebooklm"], "missing NotebookLM highlight action")
+        assert(highlight_buttons["notebooklm_explain_simple"] == nil, "prompt highlight action should not be registered directly")
         local menu = {}
         plugin:addToMainMenu(menu)
         assert(menu.notebooklm, "missing NotebookLM tools menu")
-        local settings_menu = menu.notebooklm.sub_item_table[4]
+        assert(menu.notebooklm.sub_item_table[2].text == "Answers", "missing NotebookLM answers menu")
+        local settings_menu = menu.notebooklm.sub_item_table[5]
         assert(settings_menu and settings_menu.text == "Settings", "missing NotebookLM settings menu")
-        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 3, "settings menu does not expose expected settings")
+        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 2, "settings menu does not expose expected settings")
         assert(settings_menu.sub_item_table[1].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
         settings_menu.sub_item_table[1].callback()
         assert(plugin.settings:read("enable_upload") == false, "source upload toggle did not disable upload")
@@ -352,10 +367,6 @@ def main() -> None:
         assert(plugin.settings:read("upload_mode") == "path", "upload mode toggle did not switch to path")
         settings_menu.sub_item_table[2].callback()
         assert(plugin.settings:read("upload_mode") == "multipart", "upload mode toggle did not switch back to multipart")
-        settings_menu.sub_item_table[3].callback()
-        assert(plugin.settings:read("show_prompt_buttons") == false, "prompt button toggle did not disable prompt buttons")
-        settings_menu.sub_item_table[3].callback()
-        assert(plugin.settings:read("show_prompt_buttons") == true, "prompt button toggle did not re-enable prompt buttons")
 
         local unsafe_value = function() return "unsafe" end
         local sanitized_link = plugin.storage:save_link(plugin.ui, {
@@ -376,12 +387,31 @@ def main() -> None:
         assert(type(sanitized_link.linked_at) == "string", "unsafe linked_at did not fall back to an ISO string")
         plugin.storage:clear_link(plugin.ui)
 
-        local unlinked_item = highlight_buttons["notebooklm_ask"]({
+        plugin.storage:save_link(plugin.ui, {
+            notebook_id = "stale-local-notebook",
+            notebook_title = "Stale local notebook",
+        })
+        _G.__linked_book = false
+        plugin.notebooklm_ui:ask_with_prompt(
+            "Stale local passage",
+            "Explain this passage simply.",
+            "Explica simple"
+        )
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "stale local link was used after bridge returned 404")
+        plugin.notebooklm_ui:_close_input()
+        plugin.storage:clear_link(plugin.ui)
+
+        local unlinked_item = highlight_buttons["notebooklm"]({
             selected_text = { text = "Unlinked highlighted passage" },
         })
-        assert(unlinked_item and unlinked_item.callback, "Ask NotebookLM highlight item did not render")
+        assert(unlinked_item and unlinked_item.callback, "NotebookLM highlight item did not render")
+        assert(unlinked_item.text == "NotebookLM", "highlight menu should expose one NotebookLM entry")
         unlinked_item.callback()
-        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "unlinked highlight did not open setup")
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title:find("NotebookLM", 1, true), "unlinked highlight did not open NotebookLM submenu")
+        assert(plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Ask NotebookLM", "submenu missing ask action")
+        assert(plugin.notebooklm_ui.input_dialog.buttons[2][1].text == "NotebookLM answers", "submenu missing answers action")
+        plugin.notebooklm_ui.input_dialog.buttons[1][1].callback()
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "unlinked ask did not open setup")
         assert(plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Skip", "setup does not expose a skip action")
         plugin.notebooklm_ui:_close_input()
 
@@ -393,6 +423,11 @@ def main() -> None:
         picker.buttons[1][1].callback()
         local existing_link = plugin.storage:get_link(plugin.ui)
         assert(existing_link and existing_link.notebook_id == "mock-notebook", "existing notebook link was not saved")
+        plugin.notebooklm_ui:show_setup()
+        local linked_setup = plugin.notebooklm_ui.input_dialog
+        assert(linked_setup and linked_setup.buttons[3] and linked_setup.buttons[3][1].text == "Clear link", "linked setup did not expose clear link")
+        linked_setup.buttons[3][1].callback()
+        assert(plugin.storage:get_link(plugin.ui) == nil, "clear link did not remove local link")
 
         plugin.notebooklm_ui:create_notebook("Created Notebook", true)
         local link = plugin.storage:get_link(plugin.ui)
@@ -425,11 +460,18 @@ def main() -> None:
         assert(disabled_upload_message and disabled_upload_message.text and disabled_upload_message.text:find("Source upload is disabled", 1, true), "disabled upload error was not shown")
         plugin.settings:write("enable_upload", true)
 
-        local prompt_item = highlight_buttons["notebooklm_explain_simple"]({
+        local prompt_item = highlight_buttons["notebooklm"]({
             selected_text = { text = "Prompt button selected text" },
         })
-        assert(prompt_item and prompt_item.callback, "prompt highlight item did not render")
+        assert(prompt_item and prompt_item.callback, "NotebookLM highlight item did not render")
         prompt_item.callback()
+        local prompt_hub = plugin.notebooklm_ui.input_dialog
+        assert(prompt_hub and prompt_hub.buttons[1][1].text == "Ask NotebookLM", "NotebookLM submenu did not render after link")
+        assert(prompt_hub.buttons[3][1].text == "Relink notebook", "linked submenu did not expose relink")
+        prompt_hub.buttons[1][1].callback()
+        local prompt_picker = plugin.notebooklm_ui.input_dialog
+        assert(prompt_picker and prompt_picker.title:find("Ask NotebookLM", 1, true), "ask action did not open prompt picker")
+        prompt_picker.buttons[1][1].callback()
         local prompt_payload = _G.__last_encoded_value
         assert(prompt_payload and prompt_payload.selected_text == "Prompt button selected text", "highlight prompt selected text was not sent")
         assert(prompt_payload.prompt == plugin.prompts.get("explain_simple").prompt, "highlight prompt preset was not sent")
@@ -447,7 +489,7 @@ def main() -> None:
         assert(ask_payload.prompt == "Explain this passage simply.", "ask prompt was not sent")
         assert(ask_payload.book and ask_payload.book.author == "Author", "ask book author was not sent")
         local viewer = require("ui/widget/textviewer")
-        assert(viewer.last_opened == "/tmp/notebooklm-last-answer.md", "answer viewer was not opened")
+        assert(viewer.last_opened and viewer.last_opened:find("/tmp/notebooklm%-answer%-"), "answer viewer was not opened with a saved answer")
         local file = io.open(viewer.last_opened, "r")
         assert(file, "answer file was not written")
         local content = file:read("*all")
@@ -458,6 +500,15 @@ def main() -> None:
         assert(content:find("source%-1"), "source id is missing")
         assert(content:find("Reference text from uploaded source", 1, true), "cited text is missing")
         assert(content:find("## Citations", 1, true), "citations section is missing")
+        local last_answer_file = io.open("/tmp/notebooklm-last-answer.md", "r")
+        assert(last_answer_file, "last answer file was not written")
+        last_answer_file:close()
+        plugin.notebooklm_ui:show_answers()
+        local answers_dialog = plugin.notebooklm_ui.input_dialog
+        assert(answers_dialog and answers_dialog.title:find("NotebookLM answers", 1, true), "answers list did not render")
+        assert(answers_dialog.buttons[1][1].text:find("Explica simple", 1, true), "answers list did not show question context first")
+        answers_dialog.buttons[1][1].callback()
+        assert(viewer.last_opened and viewer.last_opened:find("/tmp/notebooklm%-answer%-"), "saved answer did not reopen")
 
         plugin.notebooklm_ui:show_custom_question("Custom highlighted passage")
         local custom_dialog = plugin.notebooklm_ui.input_dialog

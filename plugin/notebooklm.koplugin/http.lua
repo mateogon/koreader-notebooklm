@@ -110,6 +110,33 @@ function Http.get(base_url, path, timeout)
     return decode_json(body)
 end
 
+function Http.delete(base_url, path, timeout)
+    local url = join_url(base_url, path)
+    local lib, lib_err = request_library(url)
+    if not lib then
+        return nil, lib_err
+    end
+
+    local response = {}
+    local _, code, _, status = with_timeout(timeout, function()
+        return lib.request{
+            url = url,
+            method = "DELETE",
+            sink = ltn12.sink.table(response),
+        }
+    end)
+    local body = table.concat(response)
+
+    local status_code, status_err = normalize_status(code, status, "Bridge request failed.")
+    if not status_code then
+        return nil, status_err
+    end
+    if status_code < 200 or status_code >= 300 then
+        return nil, string.format("Bridge DELETE %s failed: %s %s", path, tostring(status_code), body), status_code
+    end
+    return decode_json(body)
+end
+
 function Http.post(base_url, path, payload, timeout)
     local url = join_url(base_url, path)
     local lib, lib_err = request_library(url)

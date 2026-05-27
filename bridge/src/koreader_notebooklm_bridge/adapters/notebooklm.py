@@ -8,6 +8,7 @@ storage.
 from __future__ import annotations
 
 import json
+import logging
 import subprocess
 from typing import Any
 
@@ -21,6 +22,8 @@ from ..models import (
     SourceUploadResponse,
 )
 from .errors import AdapterCommandError, AdapterNotConfiguredError
+
+logger = logging.getLogger("uvicorn.error")
 
 
 class NlmNotebookLMAdapter:
@@ -57,6 +60,12 @@ class NlmNotebookLMAdapter:
                 "No notebook_id was provided and no default notebook is configured."
             )
 
+        logger.info(
+            "NotebookLM nlm ask notebook_id=%s selected_chars=%s prompt_chars=%s",
+            notebook_id,
+            len(request.selected_text or ""),
+            len(request.prompt or ""),
+        )
         question = self._build_question(request)
         data = self._run_json(
             self._with_profile(
@@ -166,6 +175,7 @@ class NlmNotebookLMAdapter:
 
     def _run_text(self, args: list[str], timeout: float | None = None) -> str:
         command = [self.config.nlm_command, *args]
+        logger.info("NotebookLM running command: %s", " ".join(_safe_args(command)))
         try:
             completed = subprocess.run(
                 command,
@@ -183,6 +193,11 @@ class NlmNotebookLMAdapter:
 
         if completed.returncode != 0:
             message = (completed.stderr or completed.stdout or "Unknown nlm error").strip()
+            logger.warning(
+                "NotebookLM nlm command failed returncode=%s stderr_or_stdout=%s",
+                completed.returncode,
+                _truncate_error(message, limit=300),
+            )
             raise AdapterCommandError(_truncate_error(message))
         return completed.stdout
 
@@ -213,6 +228,13 @@ def _truncate_error(value: str, limit: int = 800) -> str:
     if len(value) <= limit:
         return value
     return value[:limit] + "..."
+
+
+def _safe_args(command: list[str]) -> list[str]:
+    safe = list(command)
+    if "query" in safe and safe:
+        safe[-1] = f"<question chars={len(safe[-1])}>"
+    return safe
 
 
 def _extract_id_line(output: str) -> str | None:

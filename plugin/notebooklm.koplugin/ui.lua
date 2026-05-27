@@ -1,13 +1,35 @@
+local ButtonDialog = require("ui/widget/buttondialog")
 local ConfirmBox = require("ui/widget/confirmbox")
 local DataStorage = require("datastorage")
 local Font = require("ui/font")
 local InfoMessage = require("ui/widget/infomessage")
 local InputDialog = require("ui/widget/inputdialog")
+local logger = require("logger")
+local LuaSettings = require("luasettings")
 local TextViewer = require("ui/widget/textviewer")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 
 local NotebookLMUI = {}
+local MAX_ANSWER_HISTORY = 30
+
+local function compact_text(value)
+    return tostring(value or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
+end
+
+local function shorten(value, limit)
+    local text = compact_text(value)
+    if #text <= limit then
+        return text
+    end
+    return text:sub(1, math.max(1, limit - 3)) .. "..."
+end
+
+local function timestamp_id()
+    local timestamp = os.date("!%Y%m%dT%H%M%SZ")
+    local clock = math.floor((os.clock() or 0) * 1000)
+    return string.format("%s-%d-%06d", timestamp, clock, math.random(0, 999999))
+end
 
 function NotebookLMUI:new(opts)
     opts = opts or {}
@@ -51,17 +73,85 @@ function NotebookLMUI:_link()
     return self.storage:get_link(self.plugin.ui)
 end
 
+function NotebookLMUI:_answers_settings()
+    return LuaSettings:open(DataStorage:getSettingsDir() .. "/notebooklm-answers.lua")
+end
+
+function NotebookLMUI:_read_answers()
+    local settings = self:_answers_settings()
+    local answers = settings:readSetting("answers", {})
+    if type(answers) ~= "table" then
+        return {}
+    end
+
+    local normalized = {}
+    for _, entry in ipairs(answers) do
+        if type(entry) == "table" and entry.path and entry.question then
+            table.insert(normalized, entry)
+        end
+    end
+    return normalized
+end
+
+function NotebookLMUI:_save_answers(answers)
+    local settings = self:_answers_settings()
+    settings:saveSetting("answers", answers)
+    settings:flush()
+end
+
+function NotebookLMUI:_remember_answer(result, path, id)
+    local book = self:_book()
+    local answers = self:_read_answers()
+    table.insert(answers, 1, {
+        id = id or timestamp_id(),
+        path = path,
+        created_at = os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        book_title = tostring(book.title or ""),
+        notebook_id = tostring(result.notebook_id or ""),
+        prompt_label = tostring(result.prompt_label or "Question"),
+        question = tostring(result.prompt or ""),
+        selected_preview = shorten(result.selected_text or "", 120),
+        answer_preview = shorten(result.answer or "", 180),
+    })
+    while #answers > MAX_ANSWER_HISTORY do
+        table.remove(answers)
+    end
+    self:_save_answers(answers)
+end
+
 function NotebookLMUI:_sync_bridge_link()
     local book = self:_book()
-    local response = self.client:get_book(book.book_id)
+    local response, err, code = self.client:get_book(book.book_id)
     if response and response.book and response.book.notebook_id then
+        logger.info("NotebookLM: bridge mapping found for book", book.book_id, "notebook", response.book.notebook_id)
         return self:_save_link(response.book)
     end
-    return self:_link()
+    if code == 404 then
+        logger.info("NotebookLM: bridge has no mapping for book", book.book_id, "ignoring local link until relink")
+        return nil
+    end
+    if err then
+        logger.warn("NotebookLM: bridge mapping lookup failed for book", book.book_id, err)
+    end
+    local local_link = self:_link()
+    if local_link and local_link.notebook_id then
+        logger.info("NotebookLM: using local link for book", book.book_id, "notebook", local_link.notebook_id)
+    end
+    return local_link
 end
 
 function NotebookLMUI:_save_link(link)
     return self.storage:save_link(self.plugin.ui, link)
+end
+
+function NotebookLMUI:_clear_link()
+    local book = self:_book()
+    logger.info("NotebookLM: clearing local link for book", book.book_id)
+    local _, err = self.client:clear_book(book.book_id)
+    if err then
+        logger.warn("NotebookLM: bridge clear link failed for book", book.book_id, err)
+    end
+    self.storage:clear_link(self.plugin.ui)
 end
 
 function NotebookLMUI:_bridge_link(notebook_id, notebook_title, source_id)
@@ -158,6 +248,56 @@ function NotebookLMUI:show_setup(on_ready)
             end,
         })
     end
+    local buttons = {
+        {
+            {
+                text = _("Skip"),
+                callback = function()
+                    self:_close_input()
+                end,
+            },
+            {
+                text = _("Use ID"),
+                callback = function()
+                    local notebook_id = self.input_dialog:getInputText()
+                    if not notebook_id or notebook_id == "" then
+                        self:_show_error("Enter a NotebookLM notebook ID first.")
+                        return
+                    end
+                    self:_close_input()
+                    local saved, err = self:_bridge_link(notebook_id, notebook_id, nil)
+                    if err then
+                        self:_show_error(err)
+                        return
+                    end
+                    self:_show_info("Book linked to NotebookLM.")
+                    if on_ready then
+                        on_ready(saved)
+                    end
+                end,
+            },
+        },
+        action_row,
+    }
+    if link and link.notebook_id then
+        table.insert(buttons, {
+            {
+                text = _("Clear link"),
+                callback = function()
+                    self:_close_input()
+                    self:_clear_link()
+                    self:_show_info("NotebookLM link cleared.")
+                    self:show_setup(on_ready)
+                end,
+            },
+            {
+                text = _("Close"),
+                callback = function()
+                    self:_close_input()
+                end,
+            },
+        })
+    end
 
     self.input_dialog = InputDialog:new{
         title = _("NotebookLM setup"),
@@ -168,37 +308,7 @@ function NotebookLMUI:show_setup(on_ready)
         }, "\n"),
         input_hint = _("Notebook title or notebook ID"),
         input_type = "text",
-        buttons = {
-            {
-                {
-                    text = _("Skip"),
-                    callback = function()
-                        self:_close_input()
-                    end,
-                },
-                {
-                    text = _("Use ID"),
-                    callback = function()
-                        local notebook_id = self.input_dialog:getInputText()
-                        if not notebook_id or notebook_id == "" then
-                            self:_show_error("Enter a NotebookLM notebook ID first.")
-                            return
-                        end
-                        self:_close_input()
-                        local saved, err = self:_bridge_link(notebook_id, notebook_id, nil)
-                        if err then
-                            self:_show_error(err)
-                            return
-                        end
-                        self:_show_info("Book linked to NotebookLM.")
-                        if on_ready then
-                            on_ready(saved)
-                        end
-                    end,
-                },
-            },
-            action_row,
-        },
+        buttons = buttons,
     }
     UIManager:show(self.input_dialog)
 end
@@ -323,6 +433,71 @@ function NotebookLMUI:create_notebook(title, upload_after, on_ready)
     end
 end
 
+function NotebookLMUI:show_highlight_menu(highlighted_text)
+    if not highlighted_text or highlighted_text == "" then
+        self:_show_error("No highlighted text found.")
+        return
+    end
+    local link = self:_sync_bridge_link()
+    local notebook_line = link and link.notebook_id
+        and ("Notebook: " .. tostring(link.notebook_title or link.notebook_id))
+        or "Notebook: not linked"
+    local setup_text = link and link.notebook_id and _("Relink notebook") or _("Link notebook")
+
+    self.input_dialog = ButtonDialog:new{
+        title = table.concat({
+            "NotebookLM",
+            notebook_line,
+            "Text: " .. shorten(highlighted_text, 90),
+        }, "\n"),
+        buttons = {
+            {
+                {
+                    text = _("Ask NotebookLM"),
+                    callback = function()
+                        self:_close_input()
+                        self:ask_highlight(highlighted_text)
+                    end,
+                },
+            },
+            {
+                {
+                    text = _("NotebookLM answers"),
+                    callback = function()
+                        self:_close_input()
+                        self:show_answers()
+                    end,
+                },
+            },
+            {
+                {
+                    text = setup_text,
+                    callback = function()
+                        self:_close_input()
+                        self:show_setup()
+                    end,
+                },
+                {
+                    text = _("Status"),
+                    callback = function()
+                        self:_close_input()
+                        self:show_status()
+                    end,
+                },
+            },
+            {
+                {
+                    text = _("Close"),
+                    callback = function()
+                        self:_close_input()
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(self.input_dialog)
+end
+
 function NotebookLMUI:ask_highlight(highlighted_text)
     if not highlighted_text or highlighted_text == "" then
         self:_show_error("No highlighted text found.")
@@ -351,6 +526,51 @@ function NotebookLMUI:ask_with_prompt(highlighted_text, prompt, prompt_label)
         return
     end
     self:send_ask(highlighted_text, prompt, prompt_label)
+end
+
+function NotebookLMUI:show_answers()
+    local answers = self:_read_answers()
+    if #answers == 0 then
+        self:_show_info("No NotebookLM answers saved yet.")
+        return
+    end
+
+    local rows = {}
+    local limit = math.min(#answers, 12)
+    for i = 1, limit do
+        local entry = answers[i]
+        local label = shorten(
+            tostring(entry.prompt_label or "Question") .. ": " .. tostring(entry.question or ""),
+            64
+        )
+        table.insert(rows, {
+            {
+                text = label,
+                callback = function()
+                    self:_close_input()
+                    TextViewer.openFile(entry.path)
+                end,
+                hold_callback = function()
+                    self:_show_info(shorten(entry.answer_preview or "", 220))
+                end,
+            },
+        })
+    end
+    table.insert(rows, {
+        {
+            text = _("Close"),
+            callback = function()
+                self:_close_input()
+            end,
+        },
+    })
+
+    self.input_dialog = ButtonDialog:new{
+        title = _("NotebookLM answers") .. "\n" .. _("Most recent first"),
+        buttons = rows,
+        rows_per_page = 8,
+    }
+    UIManager:show(self.input_dialog)
 end
 
 function NotebookLMUI:show_prompt_picker(highlighted_text)
@@ -382,12 +602,10 @@ function NotebookLMUI:show_prompt_picker(highlighted_text)
         },
     })
 
-    self.input_dialog = InputDialog:new{
-        title = _("Ask NotebookLM"),
-        description = "Choose a prompt for the highlighted passage.",
-        input_type = "text",
-        input_hint = _("Optional custom question"),
+    self.input_dialog = ButtonDialog:new{
+        title = _("Ask NotebookLM") .. "\n" .. ("Text: " .. shorten(highlighted_text, 90)),
         buttons = rows,
+        rows_per_page = 8,
     }
     UIManager:show(self.input_dialog)
 end
@@ -442,6 +660,12 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
     }
     UIManager:show(loading)
     UIManager:scheduleIn(0.1, function()
+        logger.info(
+            "NotebookLM: sending ask",
+            "notebook", link.notebook_id,
+            "prompt_label", tostring(prompt_label),
+            "selected_chars", tostring(#highlighted_text)
+        )
         local response, err = self.client:ask({
             notebook_id = link.notebook_id,
             selected_text = highlighted_text,
@@ -484,11 +708,14 @@ local function reference_label(reference, index)
 end
 
 function NotebookLMUI:show_answer(result)
-    local path = DataStorage:getSettingsDir() .. "/notebooklm-last-answer.md"
+    local id = timestamp_id()
+    local path = DataStorage:getSettingsDir() .. "/notebooklm-answer-" .. id .. ".md"
+    local last_path = DataStorage:getSettingsDir() .. "/notebooklm-last-answer.md"
     local lines = {
         "# NotebookLM",
         "",
         "Prompt: " .. tostring(result.prompt_label or "Question"),
+        "Question: " .. tostring(result.prompt or ""),
         "Notebook ID: " .. tostring(result.notebook_id or ""),
         "",
         "## Selected text",
@@ -539,14 +766,23 @@ function NotebookLMUI:show_answer(result)
         end
     end
 
-    local file = io.open(path, "w")
-    if not file then
+    local function write_file(write_path)
+        local file = io.open(write_path, "w")
+        if not file then
+            return false
+        end
+        file:write(table.concat(lines, "\n"))
+        file:write("\n")
+        file:close()
+        return true
+    end
+
+    if not write_file(path) then
         self:_show_error("Could not write NotebookLM answer file.")
         return
     end
-    file:write(table.concat(lines, "\n"))
-    file:write("\n")
-    file:close()
+    write_file(last_path)
+    self:_remember_answer(result, path, id)
     TextViewer.openFile(path)
 end
 

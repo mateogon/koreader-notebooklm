@@ -26,6 +26,15 @@ class BookMappingStore:
         self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
         return request
 
+    def delete(self, book_id: str) -> bool:
+        data = self._read()
+        existed = book_id in data
+        if existed:
+            del data[book_id]
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+        return existed
+
     def _read(self) -> dict[str, object]:
         if not self.path.exists():
             return {}

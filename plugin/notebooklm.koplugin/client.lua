@@ -44,6 +44,14 @@ function Client:_post(path, payload)
     return self.http.post(self:_bridge_url(), path, payload, self:_timeout())
 end
 
+function Client:_delete(path)
+    local ok, err = self:_ensure_bridge()
+    if not ok then
+        return nil, err
+    end
+    return self.http.delete(self:_bridge_url(), path, self:_short_timeout())
+end
+
 function Client:health()
     return self:_get("/health", self:_short_timeout())
 end
@@ -59,13 +67,17 @@ end
 function Client:get_book(book_id)
     local response, err, code = self:_get("/books/" .. self.http.path_escape(book_id), self:_short_timeout())
     if code == 404 then
-        return nil, nil
+        return nil, nil, 404
     end
-    return response, err
+    return response, err, code
 end
 
 function Client:link_book(book)
     return self:_post("/books/link", book)
+end
+
+function Client:clear_book(book_id)
+    return self:_delete("/books/" .. self.http.path_escape(book_id))
 end
 
 function Client:upload_source(notebook_id, source)

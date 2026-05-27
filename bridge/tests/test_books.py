@@ -39,3 +39,24 @@ def test_book_get_returns_404_for_missing_mapping(tmp_path):
     response = client.get("/books/missing")
 
     assert response.status_code == 404
+
+
+def test_book_delete_clears_mapping(tmp_path):
+    app = create_app(BridgeConfig(adapter="mock", data_dir=tmp_path))
+    client = TestClient(app)
+
+    client.post(
+        "/books/link",
+        json={
+            "book_id": "book-1",
+            "notebook_id": "notebook-1",
+            "notebook_title": "Notebook One",
+            "title": "Book One",
+        },
+    )
+
+    delete_response = client.delete("/books/book-1")
+
+    assert delete_response.status_code == 200
+    assert delete_response.json() == {"ok": True, "deleted": True}
+    assert client.get("/books/book-1").status_code == 404

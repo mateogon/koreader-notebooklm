@@ -60,16 +60,16 @@ function NotebookLM:init()
     end
 
     if self.ui and self.ui.highlight and self.ui.document then
-        self.ui.highlight:addToHighlightDialog("notebooklm_ask", function(reader_highlight)
+        self.ui.highlight:addToHighlightDialog("notebooklm", function(reader_highlight)
             return {
-                text = _("Ask NotebookLM"),
+                text = _("NotebookLM"),
                 enabled = true,
                 callback = function()
                     local selected_text = reader_highlight
                         and reader_highlight.selected_text
                         and reader_highlight.selected_text.text
                     NetworkMgr:runWhenOnline(function()
-                        self.notebooklm_ui:ask_highlight(selected_text)
+                        self.notebooklm_ui:show_highlight_menu(selected_text)
                     end)
                 end,
                 hold_callback = function()
@@ -77,26 +77,6 @@ function NotebookLM:init()
                 end,
             }
         end)
-
-        if self.settings:read("show_prompt_buttons") then
-            for _, prompt in ipairs(self.prompts.presets) do
-                local prompt_config = prompt
-                self.ui.highlight:addToHighlightDialog("notebooklm_" .. prompt_config.id, function(reader_highlight)
-                    return {
-                        text = prompt_config.label .. " (NotebookLM)",
-                        enabled = true,
-                        callback = function()
-                            local selected_text = reader_highlight
-                                and reader_highlight.selected_text
-                                and reader_highlight.selected_text.text
-                            NetworkMgr:runWhenOnline(function()
-                                self.notebooklm_ui:ask_with_prompt(selected_text, prompt_config.prompt, prompt_config.label)
-                            end)
-                        end,
-                    }
-                end)
-            end
-        end
     end
 end
 
@@ -110,6 +90,12 @@ function NotebookLM:addToMainMenu(menu_items)
                 enabled = not not (self.ui and self.ui.document),
                 callback = function()
                     self.notebooklm_ui:show_setup()
+                end,
+            },
+            {
+                text = _("Answers"),
+                callback = function()
+                    self.notebooklm_ui:show_answers()
                 end,
             },
             {
@@ -143,14 +129,6 @@ function NotebookLM:addToMainMenu(menu_items)
                         end,
                         callback = function()
                             self:toggleUploadMode()
-                        end,
-                    },
-                    {
-                        text_func = function()
-                            return _("Prompt buttons after restart: ") .. enabled_label(self.settings:read("show_prompt_buttons"))
-                        end,
-                        callback = function()
-                            self:togglePromptButtons()
                         end,
                     },
                 },

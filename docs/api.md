@@ -84,6 +84,9 @@ Response:
 ## `POST /sources/upload`
 
 JSON upload for files already visible to the bridge host.
+The bridge treats the source as a generic file path; EPUB/PDF/TXT/etc support
+depends on the active NotebookLM adapter and NotebookLM's accepted source
+formats.
 
 Request:
 
