@@ -127,8 +127,6 @@ def export_nlm_auth_bundle(
     except json.JSONDecodeError as e:
         raise AuthBundleError("parse_error", "nlm profile metadata is not valid JSON.") from e
 
-    output_path = output_path.expanduser()
-    output_path.parent.mkdir(parents=True, exist_ok=True)
     bundle = {
         "schema": "koreader-notebooklm-auth-bundle/v1",
         "provider": "nlm-profile-export",
@@ -140,6 +138,21 @@ def export_nlm_auth_bundle(
         "build_label": str(metadata.get("build_label") or ""),
         "extracted_at": time.time(),
     }
+    return write_auth_bundle(bundle, output_path=output_path, overwrite=overwrite)
+
+
+def write_auth_bundle(
+    bundle: dict[str, Any],
+    *,
+    output_path: Path,
+    overwrite: bool = False,
+) -> Path:
+    cookies = bundle.get("cookies")
+    if not isinstance(cookies, (dict, list)) or not cookies:
+        raise AuthBundleError("auth_missing", "Auth bundle has no cookies.")
+
+    output_path = output_path.expanduser()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
 
     flags = os.O_WRONLY | os.O_CREAT

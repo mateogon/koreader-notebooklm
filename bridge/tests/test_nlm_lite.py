@@ -21,6 +21,11 @@ from koreader_notebooklm_bridge.notebooklm_lite.auth import (
     load_auth_bundle,
 )
 from koreader_notebooklm_bridge.notebooklm_lite.client import NotebookLMLiteClient
+from koreader_notebooklm_bridge.notebooklm_lite.login import (
+    default_auth_bundle_path,
+    default_chrome_profile_dir,
+    extract_email,
+)
 from koreader_notebooklm_bridge.notebooklm_lite.parsing import (
     parse_batchexecute_response,
     parse_query_response,
@@ -132,6 +137,23 @@ def test_extract_page_tokens_from_html():
     assert tokens.csrf_token == "csrf-token"
     assert tokens.session_id == "session-id"
     assert tokens.build_label == "build-label"
+
+
+def test_nlm_lite_login_defaults_are_separate_from_nlm(monkeypatch, tmp_path):
+    monkeypatch.setenv("HOME", str(tmp_path))
+
+    assert default_auth_bundle_path("fresh") == (
+        tmp_path / ".koreader-notebooklm" / "auth-bundles" / "fresh-auth-bundle.json"
+    )
+    assert default_chrome_profile_dir("fresh") == (
+        tmp_path / ".koreader-notebooklm" / "chrome-profiles" / "fresh"
+    )
+
+
+def test_nlm_lite_login_extracts_email_without_google_internal_addresses():
+    html = '"support@google.com" "mateo@example.com"'
+
+    assert extract_email(html) == "mateo@example.com"
 
 
 def test_parse_batchexecute_notebook_list():

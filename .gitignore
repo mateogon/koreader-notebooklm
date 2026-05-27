@@ -29,6 +29,7 @@ client_secret*.json
 secrets/
 .secrets/
 .notebooklm-mcp-cli/
+.koreader-notebooklm/
 
 # Local data
 *.sqlite

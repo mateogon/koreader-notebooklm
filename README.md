@@ -80,8 +80,13 @@ KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID=<NOTEBOOK_ID> \
 ../scripts/run-bridge-dev.sh
 ```
 
-`nlm-lite` still relies on existing local NotebookLM auth state or an explicit auth bundle outside the repo.
-Export a portable bundle from a local `nlm` profile with:
+`nlm-lite` uses an explicit auth bundle outside the repo. Create one without `nlm`:
+
+```sh
+scripts/nlm-lite-login.py --profile koreader-fresh --overwrite
+```
+
+If you already have a local `nlm` profile, you can also export it as a fallback:
 
 ```sh
 scripts/export-nlm-auth-bundle.py --profile koreader-fresh

@@ -49,7 +49,13 @@ KOREADER_NOTEBOOKLM_DIRECT_TIMEOUT_SECONDS=120
 KOREADER_NOTEBOOKLM_UPLOAD_WAIT_SECONDS=600
 ```
 
-Export a portable bundle from an existing `nlm` profile:
+Create a portable bundle with standalone `nlm-lite` login:
+
+```bash
+../scripts/nlm-lite-login.py --profile koreader-fresh --overwrite
+```
+
+Or export a portable bundle from an existing `nlm` profile:
 
 ```bash
 ../scripts/export-nlm-auth-bundle.py --profile koreader-fresh

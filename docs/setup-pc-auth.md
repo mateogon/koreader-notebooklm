@@ -74,15 +74,28 @@ Expected result:
 - `nlm notebook list --json` returns a JSON list.
 - No auth files are copied into this repository.
 
-## 4. Export an `nlm-lite` Auth Bundle
+## 4. Create an `nlm-lite` Auth Bundle
 
-After `nlm login` works, export a portable auth bundle:
+Preferred path: use this repo's standalone browser login, without `nlm`:
+
+```sh
+scripts/nlm-lite-login.py --profile koreader-fresh --overwrite
+```
+
+This opens Chrome, waits for you to sign in to NotebookLM, extracts cookies and
+NotebookLM page tokens through Chrome DevTools Protocol, then writes:
+
+```text
+~/.koreader-notebooklm/auth-bundles/koreader-fresh-auth-bundle.json
+```
+
+Fallback path: if you already have an `nlm` profile and only need to export it:
 
 ```sh
 scripts/export-nlm-auth-bundle.py --profile <profile-name>
 ```
 
-By default this writes outside the repo:
+The fallback writes outside the repo:
 
 ```text
 ~/.notebooklm-mcp-cli/auth-bundles/<profile-name>-auth-bundle.json
@@ -94,7 +107,7 @@ do not commit it, paste it, or put it in regular logs.
 To overwrite an old bundle after re-login:
 
 ```sh
-scripts/export-nlm-auth-bundle.py --profile <profile-name> --overwrite
+scripts/nlm-lite-login.py --profile <profile-name> --overwrite
 ```
 
 ## 5. Run Bridge With `nlm-lite`
@@ -104,7 +117,7 @@ From this repo:
 ```sh
 cd bridge
 KOREADER_NOTEBOOKLM_ADAPTER=nlm-lite \
-KOREADER_NOTEBOOKLM_AUTH_BUNDLE=~/.notebooklm-mcp-cli/auth-bundles/<profile-name>-auth-bundle.json \
+KOREADER_NOTEBOOKLM_AUTH_BUNDLE=~/.koreader-notebooklm/auth-bundles/<profile-name>-auth-bundle.json \
 KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID=<NOTEBOOK_ID> \
 uv run uvicorn --app-dir src koreader_notebooklm_bridge.app:app --host 127.0.0.1 --port 8765
 ```
