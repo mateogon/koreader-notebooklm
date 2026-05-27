@@ -734,7 +734,6 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
 
     local book = self:_book()
     self:_close_reader_highlight(true)
-    self:_show_info("NotebookLM is thinking. You can keep reading.")
     logger.info(
         "NotebookLM: starting ask job",
         "notebook", link.notebook_id,
