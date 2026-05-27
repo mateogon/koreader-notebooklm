@@ -14,6 +14,10 @@ class BridgeConfig:
     nlm_command: str = "nlm"
     nlm_profile: str | None = None
     nlm_timeout_seconds: float = 120.0
+    auth_bundle_path: Path | None = None
+    notebooklm_base_url: str = "https://notebooklm.google.com"
+    direct_timeout_seconds: float = 120.0
+    upload_wait_seconds: float = 600.0
     data_dir: Path = Path("data")
 
 
@@ -26,5 +30,15 @@ def load_config() -> BridgeConfig:
         nlm_command=os.getenv("KOREADER_NOTEBOOKLM_NLM_COMMAND", "nlm"),
         nlm_profile=os.getenv("KOREADER_NOTEBOOKLM_NLM_PROFILE"),
         nlm_timeout_seconds=float(os.getenv("KOREADER_NOTEBOOKLM_NLM_TIMEOUT_SECONDS", "120")),
+        auth_bundle_path=(
+            Path(value) if (value := os.getenv("KOREADER_NOTEBOOKLM_AUTH_BUNDLE")) else None
+        ),
+        notebooklm_base_url=os.getenv(
+            "KOREADER_NOTEBOOKLM_BASE_URL", "https://notebooklm.google.com"
+        ).rstrip("/"),
+        direct_timeout_seconds=float(
+            os.getenv("KOREADER_NOTEBOOKLM_DIRECT_TIMEOUT_SECONDS", "120")
+        ),
+        upload_wait_seconds=float(os.getenv("KOREADER_NOTEBOOKLM_UPLOAD_WAIT_SECONDS", "600")),
         data_dir=Path(os.getenv("KOREADER_NOTEBOOKLM_DATA_DIR", "data")),
     )

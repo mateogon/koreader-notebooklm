@@ -20,6 +20,7 @@ Implemented and locally validated:
 - Local answer history in KOReader.
 - Structured answer viewer with `Follow-up`, `New question`, `Details`, and optional automatic opening.
 - Local FastAPI bridge with `mock` and `nlm` adapters.
+- Experimental `nlm-lite` bridge adapter that talks to NotebookLM directly over HTTP without calling the `nlm` subprocess.
 - Background `/ask/jobs` flow so long NotebookLM answers do not block KOReader.
 - Conversation continuity through NotebookLM `conversation_id` for follow-up questions.
 - Basic source upload path, including preserving file extensions for EPUB/PDF detection.
@@ -31,6 +32,7 @@ Known gaps:
 - Bridge LAN security token is not implemented yet.
 - Uploads for large books/PDFs still need memory and timeout hardening.
 - NotebookLM auth is delegated to the local `nlm` CLI profile.
+- `nlm-lite` is experimental and still needs live hardening before it can guide a Lua direct client.
 - No direct NotebookLM auth, no MCP implementation, and no all-in-Kindle client yet.
 
 ## Repository Layout
@@ -69,6 +71,16 @@ KOREADER_NOTEBOOKLM_NLM_COMMAND=/path/to/nlm \
 ```
 
 The real mode assumes `nlm` is already installed and authenticated. This repo does not manage NotebookLM credentials.
+
+Run the experimental direct adapter:
+
+```sh
+KOREADER_NOTEBOOKLM_ADAPTER=nlm-lite \
+KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID=<NOTEBOOK_ID> \
+../scripts/run-bridge-dev.sh
+```
+
+`nlm-lite` still relies on existing local NotebookLM auth state or an explicit auth bundle outside the repo.
 
 Install the plugin into a KOReader plugin directory:
 
@@ -149,3 +161,4 @@ curl http://127.0.0.1:8765/health
 - [Kindle setup](docs/setup-kindle.md)
 - [Roadmap](docs/roadmap.md)
 - [Validation audit](docs/validation-audit.md)
+- [NLM Lite plan](docs/nlm-lite-plan.md)

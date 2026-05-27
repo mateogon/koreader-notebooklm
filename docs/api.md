@@ -1,6 +1,6 @@
 # Bridge API
 
-These endpoints are implemented in the local bridge. In `mock` mode they return deterministic fake data. In `nlm` mode, NotebookLM operations are delegated to the local `nlm` CLI and its existing auth profile.
+These endpoints are implemented in the local bridge. In `mock` mode they return deterministic fake data. In `nlm` mode, NotebookLM operations are delegated to the local `nlm` CLI and its existing auth profile. In experimental `nlm-lite` mode, the bridge talks to NotebookLM directly over HTTP using existing local auth state or an explicit auth bundle.
 
 - `GET /health`
 - `GET /notebooks`
@@ -172,4 +172,9 @@ that saved path to the active NotebookLM adapter.
 
 ## Auth
 
-The bridge never stores NotebookLM credentials. Real mode shells out to `nlm`, which reads its own auth/profile state.
+The bridge does not implement Google login.
+
+- `nlm` mode shells out to `nlm`, which reads its own auth/profile state.
+- `nlm-lite` mode reads existing local auth state or an explicit auth bundle, then refreshes page tokens with valid cookies.
+
+Auth files, cookies, CSRF tokens, and auth bundles must stay outside the repo and out of logs.
