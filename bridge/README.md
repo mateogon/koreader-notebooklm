@@ -49,6 +49,12 @@ KOREADER_NOTEBOOKLM_DIRECT_TIMEOUT_SECONDS=120
 KOREADER_NOTEBOOKLM_UPLOAD_WAIT_SECONDS=600
 ```
 
+Export a portable bundle from an existing `nlm` profile:
+
+```bash
+../scripts/export-nlm-auth-bundle.py --profile koreader-fresh
+```
+
 Before real mode, verify auth outside the bridge:
 
 ```bash

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 import json
+import os
 from pathlib import Path
 import re
 import time
@@ -88,6 +89,79 @@ def load_auth_bundle(
         "auth_missing",
         "NotebookLM auth bundle was not found. Run nlm login or set KOREADER_NOTEBOOKLM_AUTH_BUNDLE.",
     )
+
+
+def export_nlm_auth_bundle(
+    *,
+    profile: str = "default",
+    output_path: Path,
+    base_url: str = DEFAULT_BASE_URL,
+    storage_dir: Path | None = None,
+    overwrite: bool = False,
+) -> Path:
+    """Export an nlm profile to a portable auth bundle for nlm-lite.
+
+    The bundle contains cookies and page tokens. Treat it like a password.
+    """
+
+    profile_dir = (storage_dir or _storage_dir()) / "profiles" / profile
+    cookies_path = profile_dir / "cookies.json"
+    metadata_path = profile_dir / "metadata.json"
+    try:
+        cookies = json.loads(cookies_path.read_text(encoding="utf-8"))
+    except FileNotFoundError as e:
+        raise AuthBundleError(
+            "auth_missing",
+            f"nlm profile cookies were not found for profile: {profile}",
+        ) from e
+    except json.JSONDecodeError as e:
+        raise AuthBundleError("parse_error", "nlm profile cookies are not valid JSON.") from e
+
+    if not isinstance(cookies, (dict, list)) or not cookies:
+        raise AuthBundleError("auth_missing", "nlm profile has no cookies to export.")
+
+    try:
+        metadata = (
+            json.loads(metadata_path.read_text(encoding="utf-8")) if metadata_path.exists() else {}
+        )
+    except json.JSONDecodeError as e:
+        raise AuthBundleError("parse_error", "nlm profile metadata is not valid JSON.") from e
+
+    output_path = output_path.expanduser()
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    bundle = {
+        "schema": "koreader-notebooklm-auth-bundle/v1",
+        "provider": "nlm-profile-export",
+        "profile": profile,
+        "base_url": base_url.rstrip("/"),
+        "cookies": cookies,
+        "csrf_token": str(metadata.get("csrf_token") or ""),
+        "session_id": str(metadata.get("session_id") or ""),
+        "build_label": str(metadata.get("build_label") or ""),
+        "extracted_at": time.time(),
+    }
+    payload = json.dumps(bundle, indent=2, ensure_ascii=False) + "\n"
+
+    flags = os.O_WRONLY | os.O_CREAT
+    if overwrite:
+        flags |= os.O_TRUNC
+    else:
+        flags |= os.O_EXCL
+    try:
+        fd = os.open(output_path, flags, 0o600)
+    except FileExistsError as e:
+        raise AuthBundleError(
+            "auth_exists",
+            f"Auth bundle already exists: {output_path}",
+        ) from e
+
+    with os.fdopen(fd, "w", encoding="utf-8") as handle:
+        handle.write(payload)
+    try:
+        os.chmod(output_path, 0o600)
+    except OSError:
+        pass
+    return output_path
 
 
 def refresh_page_tokens(

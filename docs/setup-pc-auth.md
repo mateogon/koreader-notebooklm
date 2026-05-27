@@ -74,32 +74,52 @@ Expected result:
 - `nlm notebook list --json` returns a JSON list.
 - No auth files are copied into this repository.
 
-## 4. Run Bridge With `nlm-lite`
+## 4. Export an `nlm-lite` Auth Bundle
+
+After `nlm login` works, export a portable auth bundle:
+
+```sh
+scripts/export-nlm-auth-bundle.py --profile <profile-name>
+```
+
+By default this writes outside the repo:
+
+```text
+~/.notebooklm-mcp-cli/auth-bundles/<profile-name>-auth-bundle.json
+```
+
+The file contains cookies and NotebookLM page tokens. Treat it like a password:
+do not commit it, paste it, or put it in regular logs.
+
+To overwrite an old bundle after re-login:
+
+```sh
+scripts/export-nlm-auth-bundle.py --profile <profile-name> --overwrite
+```
+
+## 5. Run Bridge With `nlm-lite`
 
 From this repo:
 
 ```sh
 cd bridge
 KOREADER_NOTEBOOKLM_ADAPTER=nlm-lite \
+KOREADER_NOTEBOOKLM_AUTH_BUNDLE=~/.notebooklm-mcp-cli/auth-bundles/<profile-name>-auth-bundle.json \
 KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID=<NOTEBOOK_ID> \
 uv run uvicorn --app-dir src koreader_notebooklm_bridge.app:app --host 127.0.0.1 --port 8765
 ```
 
-For a named profile:
+For local development, `nlm-lite` can still read a named `nlm` profile directly:
 
 ```sh
 KOREADER_NOTEBOOKLM_NLM_PROFILE=<profile-name>
 ```
 
-Optional explicit auth bundle path:
+The explicit auth bundle path is preferred for portability testing because it is
+closer to the future Kindle/mobile flow and does not require the `nlm` CLI at
+bridge runtime.
 
-```sh
-KOREADER_NOTEBOOKLM_AUTH_BUNDLE=/path/to/auth-bundle.json
-```
-
-Do not place that bundle inside this repo.
-
-## 5. Smoke Test `nlm-lite`
+## 6. Smoke Test `nlm-lite`
 
 In another shell:
 
@@ -109,6 +129,13 @@ scripts/smoke-nlm-lite.sh
 
 If `KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID` is set in the bridge process,
 the script also tests `/ask`.
+
+To simulate the KOReader bridge flow without opening KOReader:
+
+```sh
+KOREADER_NOTEBOOKLM_BRIDGE_URL=http://127.0.0.1:8765 \
+scripts/smoke-koreader-bridge-flow.sh
+```
 
 ## Security Rules
 

@@ -15,15 +15,20 @@ env/
 auth.json
 auth.*.json
 *.auth.json
+*auth-bundle*.json
+auth-bundles/
 cookies.txt
+cookies.json
 *.cookies
 cookiejar*
+metadata.json
 token.json
 tokens.json
 credentials.json
 client_secret*.json
 secrets/
 .secrets/
+.notebooklm-mcp-cli/
 
 # Local data
 *.sqlite

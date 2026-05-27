@@ -81,6 +81,11 @@ KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID=<NOTEBOOK_ID> \
 ```
 
 `nlm-lite` still relies on existing local NotebookLM auth state or an explicit auth bundle outside the repo.
+Export a portable bundle from a local `nlm` profile with:
+
+```sh
+scripts/export-nlm-auth-bundle.py --profile koreader-fresh
+```
 
 Install the plugin into a KOReader plugin directory:
 

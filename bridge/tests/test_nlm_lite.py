@@ -16,6 +16,7 @@ from koreader_notebooklm_bridge.config import BridgeConfig, load_config
 from koreader_notebooklm_bridge.models import AskRequest
 from koreader_notebooklm_bridge.notebooklm_lite.auth import (
     AuthBundle,
+    export_nlm_auth_bundle,
     extract_page_tokens,
     load_auth_bundle,
 )
@@ -79,6 +80,48 @@ def test_auth_bundle_loads_explicit_file(tmp_path):
     assert bundle.session_id == "sid"
     assert bundle.build_label == "build"
     assert bundle.cookies == {"SID": "secret"}
+
+
+def test_export_nlm_auth_bundle_writes_portable_bundle(tmp_path):
+    storage = tmp_path / "nlm"
+    profile_dir = storage / "profiles" / "fresh"
+    profile_dir.mkdir(parents=True)
+    (profile_dir / "cookies.json").write_text(
+        json.dumps([{"name": "SID", "value": "secret", "domain": ".google.com"}]),
+        encoding="utf-8",
+    )
+    (profile_dir / "metadata.json").write_text(
+        json.dumps(
+            {
+                "csrf_token": "csrf",
+                "session_id": "sid",
+                "build_label": "build",
+            }
+        ),
+        encoding="utf-8",
+    )
+    output = tmp_path / "out" / "fresh-auth-bundle.json"
+
+    written = export_nlm_auth_bundle(
+        profile="fresh",
+        output_path=output,
+        storage_dir=storage,
+    )
+
+    assert written == output
+    bundle = json.loads(output.read_text(encoding="utf-8"))
+    assert bundle["schema"] == "koreader-notebooklm-auth-bundle/v1"
+    assert bundle["provider"] == "nlm-profile-export"
+    assert bundle["profile"] == "fresh"
+    assert bundle["cookies"][0]["name"] == "SID"
+    assert bundle["csrf_token"] == "csrf"
+    assert bundle["session_id"] == "sid"
+    assert bundle["build_label"] == "build"
+    assert output.stat().st_mode & 0o777 == 0o600
+
+    loaded = load_auth_bundle(bundle_path=output)
+    assert loaded.csrf_token == "csrf"
+    assert loaded.cookies == bundle["cookies"]
 
 
 def test_extract_page_tokens_from_html():
