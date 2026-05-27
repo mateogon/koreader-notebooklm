@@ -173,3 +173,4 @@ curl http://127.0.0.1:8765/health
 - [Roadmap](docs/roadmap.md)
 - [Validation audit](docs/validation-audit.md)
 - [NLM Lite plan](docs/nlm-lite-plan.md)
+- [Lua port plan](docs/lua-port-plan.md)

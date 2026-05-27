@@ -86,6 +86,17 @@ With the bridge running in experimental `nlm-lite` mode, run:
 ../scripts/smoke-nlm-lite.sh
 ```
 
+Before changing `nlm-lite` protocol code or starting the future Lua port, run
+the golden regression harness:
+
+```bash
+uv run --extra dev pytest -q
+uv run --extra dev python ../scripts/verify-plugin-lua.py
+```
+
+See `../docs/lua-port-plan.md` for the Python-to-Lua responsibility map and the
+sanitized request/response fixtures.
+
 To simulate the KOReader bridge flow without opening KOReader, run:
 
 ```bash
