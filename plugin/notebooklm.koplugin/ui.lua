@@ -79,6 +79,9 @@ function NotebookLMUI:_close_reader_highlight(keep_highlight)
     elseif highlight and highlight.highlight_dialog then
         UIManager:close(highlight.highlight_dialog)
         highlight.highlight_dialog = nil
+        if not keep_highlight then
+            self:_clear_reader_highlight()
+        end
     end
 end
 
@@ -733,7 +736,7 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
     end
 
     local book = self:_book()
-    self:_close_reader_highlight(true)
+    self:_close_reader_highlight(false)
     logger.info(
         "NotebookLM: starting ask job",
         "notebook", link.notebook_id,
@@ -800,7 +803,6 @@ function NotebookLMUI:poll_ask_job(job_id, context)
         end
 
         local response = job.result
-        self:_clear_reader_highlight()
         self:show_answer({
             prompt_label = context.prompt_label,
             prompt = context.prompt,

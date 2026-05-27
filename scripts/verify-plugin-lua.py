@@ -392,6 +392,9 @@ def main() -> None:
                 end,
                 onClose = function(self, keep_highlight)
                     self.closed_keep = keep_highlight
+                    if not keep_highlight then
+                        self:clear()
+                    end
                 end,
                 clear = function(self)
                     self.cleared = true
@@ -546,8 +549,8 @@ def main() -> None:
         assert(prompt_payload.notebook_id == "created-notebook", "highlight prompt notebook id was not sent")
         assert(prompt_payload.book and prompt_payload.book.title == "Book", "highlight prompt book title was not sent")
         assert(prompt_payload.book and prompt_payload.book.position == "25.0%", "highlight prompt book position was not sent")
-        assert(plugin.ui.highlight.closed_keep == true, "highlight dialog was not closed while keeping selection during ask")
-        assert(plugin.ui.highlight.cleared == true, "highlight selection was not cleared after successful ask")
+        assert(plugin.ui.highlight.closed_keep == false, "highlight dialog was not closed with selection reset during ask")
+        assert(plugin.ui.highlight.cleared == true, "highlight selection was not cleared immediately after starting ask")
 
         plugin.notebooklm_ui:ask_with_prompt(
             "Highlighted passage",
