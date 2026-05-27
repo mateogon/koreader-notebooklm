@@ -38,6 +38,9 @@ temp/
 # Local reference repos, not project dependencies
 vendor-references/
 
+# Generated context handoff packs
+docs/context-packs/
+
 # KOReader local test artifacts
 *.sdr/
 koreader-settings.local.lua
