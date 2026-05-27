@@ -2,6 +2,14 @@ local Json = require("direct.codec")
 
 local AuthBundle = {}
 
+local function should_send_cookie(cookie)
+    local domain = tostring(cookie.domain or "")
+    if domain == "" then
+        return true
+    end
+    return domain == ".google.com" or domain == "notebooklm.google.com"
+end
+
 local function read_file(path)
     local file = io.open(path or "", "r")
     if not file then
@@ -41,7 +49,7 @@ function AuthBundle.cookie_header(auth)
     local parts = {}
     if type(cookies[1]) == "table" then
         for _, cookie in ipairs(cookies) do
-            if type(cookie.name) == "string" and type(cookie.value) == "string" then
+            if should_send_cookie(cookie) and type(cookie.name) == "string" and type(cookie.value) == "string" then
                 parts[#parts + 1] = cookie.name .. "=" .. cookie.value
             end
         end

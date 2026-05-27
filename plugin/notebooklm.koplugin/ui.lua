@@ -240,13 +240,33 @@ end
 
 function NotebookLMUI:show_status()
     local book = self:_book()
-    local local_link = self:_sync_bridge_link()
-    local health, health_err = self.client:health()
-    local bridge_line
-    if health then
-        bridge_line = string.format("Bridge: OK (%s)", health.adapter or "unknown")
+    local backend = tostring(self.settings:read("backend") or "bridge")
+    local local_link
+    local backend_lines
+    if backend == "bridge" then
+        local_link = self:_sync_bridge_link()
+        local health, health_err = self.client:health()
+        if health then
+            backend_lines = {
+                string.format("Bridge: OK (%s)", health.adapter or "unknown"),
+                "Bridge URL: " .. tostring(self.settings:read("bridge_url")),
+            }
+        else
+            backend_lines = {
+                "Bridge: " .. tostring(health_err),
+                "Bridge URL: " .. tostring(self.settings:read("bridge_url")),
+            }
+        end
     else
-        bridge_line = "Bridge: " .. tostring(health_err)
+        local_link = self:_link()
+        local auth_path = tostring(self.settings:read("direct_auth_bundle_path") or "")
+        local direct_notebook = tostring(self.settings:read("direct_notebook_id") or "")
+        backend_lines = {
+            "Backend: lua-direct",
+            "Lua direct auth: " .. (auth_path ~= "" and "configured" or "not set"),
+            "Lua direct notebook: " .. (direct_notebook ~= "" and direct_notebook or "auto"),
+            "Debug: NotebookLM > Settings > Lua direct smoke",
+        }
     end
 
     local link_line = "Notebook: not linked"
@@ -264,13 +284,11 @@ function NotebookLMUI:show_status()
         text = table.concat({
             "KOReader NotebookLM",
             "",
-            bridge_line,
+            table.concat(backend_lines, "\n"),
             "",
             "Book: " .. tostring(book.title or "Unknown"),
             "Book ID: " .. tostring(book.book_id),
             link_line,
-            "",
-            "Bridge URL: " .. tostring(self.settings:read("bridge_url")),
         }, "\n"),
         ok_text = _("Setup"),
         ok_callback = function()

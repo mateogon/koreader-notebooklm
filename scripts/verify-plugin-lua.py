@@ -457,6 +457,19 @@ def main() -> None:
         local auth = assert(AuthBundle.load("/tmp/notebooklm-direct-auth-bundle.json"))
         assert(auth.base_url == "https://notebooklm.google.com", "auth bundle base_url did not load")
         assert(auth.csrf_token == "csrf-token", "auth bundle csrf_token did not load")
+        local filtered_cookie_auth = {
+            cookies = {
+                { name = "SID", value = "google", domain = ".google.com" },
+                { name = "OSID", value = "notebooklm", domain = "notebooklm.google.com" },
+                { name = "ACCOUNT_CHOOSER", value = "accounts", domain = "accounts.google.com" },
+                { name = "SID", value = "youtube", domain = ".youtube.com" },
+            },
+        }
+        local filtered_cookie_header = AuthBundle.cookie_header(filtered_cookie_auth)
+        assert(filtered_cookie_header:find("SID=google", 1, true), "google.com cookie was not sent")
+        assert(filtered_cookie_header:find("OSID=notebooklm", 1, true), "notebooklm host cookie was not sent")
+        assert(not filtered_cookie_header:find("ACCOUNT_CHOOSER", 1, true), "accounts.google.com cookie leaked into NotebookLM request")
+        assert(not filtered_cookie_header:find("SID=youtube", 1, true), "youtube cookie leaked into NotebookLM request")
 
         local rpc_id, params, null_value, mode, values = decode_rpc_body(
             Rpc.build_batchexecute_body(Rpc.RPC_LIST_NOTEBOOKS, Rpc.params_list_notebooks(), "csrf-token")
@@ -566,6 +579,8 @@ def main() -> None:
         assert(first_direct_request.headers["X-Goog-Csrf-Token"] == "csrf-token", "direct transport did not send csrf header")
         assert(first_direct_request.headers["X-Same-Domain"] == "1", "direct transport did not send same-domain header")
         assert(first_direct_request.headers["Content-Type"] == "application/x-www-form-urlencoded;charset=UTF-8", "direct transport content type changed")
+        assert(first_direct_request.headers["Accept"] == "*/*", "direct transport did not send accept header")
+        assert(first_direct_request.headers["User-Agent"]:find("Chrome", 1, true), "direct transport did not send browser-like user-agent")
         assert(first_direct_request.body:find("f.req=", 1, true), "direct transport did not send form body")
         local live_notebook = assert(direct_client:get_notebook("nb-golden"))
         assert(live_notebook.sources[1].id == "src-golden", "direct client get_notebook did not parse sources")

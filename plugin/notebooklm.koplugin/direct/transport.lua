@@ -8,6 +8,9 @@ local AuthBundle = require("direct.auth_bundle")
 
 local Transport = {}
 
+local FORM_CONTENT_TYPE = "application/x-www-form-urlencoded;charset=UTF-8"
+local USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+
 local function request_library(url)
     if url:match("^https://") then
         if has_https then
@@ -43,10 +46,13 @@ function Transport.post_form(url, body, auth, timeout)
     end
 
     local headers = {
-        ["Content-Type"] = "application/x-www-form-urlencoded;charset=UTF-8",
+        ["Content-Type"] = FORM_CONTENT_TYPE,
         ["Content-Length"] = tostring(#body),
+        ["Accept"] = "*/*",
+        ["Accept-Language"] = "en-US,en;q=0.9",
         ["Origin"] = auth.base_url,
         ["Referer"] = (auth.base_url:gsub("/+$", "")) .. "/",
+        ["User-Agent"] = USER_AGENT,
         ["X-Same-Domain"] = "1",
     }
     local cookie_header = AuthBundle.cookie_header(auth)
@@ -73,7 +79,11 @@ function Transport.post_form(url, body, auth, timeout)
         return nil, tostring(status or code or "NotebookLM request failed.")
     end
     if status_code < 200 or status_code >= 300 then
-        return nil, string.format("NotebookLM HTTP %s: %s", tostring(status_code), response_body), status_code
+        local preview = tostring(response_body or ""):gsub("%s+", " ")
+        if #preview > 240 then
+            preview = preview:sub(1, 237) .. "..."
+        end
+        return nil, string.format("NotebookLM HTTP %s: %s", tostring(status_code), preview), status_code
     end
     return response_body, nil, status_code
 end
