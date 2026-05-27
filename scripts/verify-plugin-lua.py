@@ -354,8 +354,16 @@ def main() -> None:
                 end,
             },
             highlight = {
+                closed_keep = nil,
+                cleared = false,
                 addToHighlightDialog = function(_, key, fn)
                     highlight_buttons[key] = fn
+                end,
+                onClose = function(self, keep_highlight)
+                    self.closed_keep = keep_highlight
+                end,
+                clear = function(self)
+                    self.cleared = true
                 end,
             },
         }
@@ -369,7 +377,7 @@ def main() -> None:
         assert(menu.notebooklm.sub_item_table[2].text == "Answers", "missing NotebookLM answers menu")
         local settings_menu = menu.notebooklm.sub_item_table[5]
         assert(settings_menu and settings_menu.text == "Settings", "missing NotebookLM settings menu")
-        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 2, "settings menu does not expose expected settings")
+        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 3, "settings menu does not expose expected settings")
         assert(settings_menu.sub_item_table[1].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
         settings_menu.sub_item_table[1].callback()
         assert(plugin.settings:read("enable_upload") == false, "source upload toggle did not disable upload")
@@ -380,6 +388,11 @@ def main() -> None:
         assert(plugin.settings:read("upload_mode") == "path", "upload mode toggle did not switch to path")
         settings_menu.sub_item_table[2].callback()
         assert(plugin.settings:read("upload_mode") == "multipart", "upload mode toggle did not switch back to multipart")
+        assert(settings_menu.sub_item_table[3].text_func():find("enabled", 1, true), "open answer setting did not show enabled state")
+        settings_menu.sub_item_table[3].callback()
+        assert(plugin.settings:read("open_answer_automatically") == false, "open answer toggle did not disable auto-open")
+        settings_menu.sub_item_table[3].callback()
+        assert(plugin.settings:read("open_answer_automatically") == true, "open answer toggle did not re-enable auto-open")
 
         local unsafe_value = function() return "unsafe" end
         local sanitized_link = plugin.storage:save_link(plugin.ui, {
@@ -493,6 +506,8 @@ def main() -> None:
         assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Ask NotebookLM", "prompt back did not return to the NotebookLM hub")
         plugin.notebooklm_ui.input_dialog.buttons[1][1].callback()
         prompt_picker = plugin.notebooklm_ui.input_dialog
+        plugin.ui.highlight.closed_keep = nil
+        plugin.ui.highlight.cleared = false
         prompt_picker.buttons[1][1].callback()
         local prompt_payload = _G.__last_encoded_value
         assert(prompt_payload and prompt_payload.selected_text == "Prompt button selected text", "highlight prompt selected text was not sent")
@@ -500,6 +515,8 @@ def main() -> None:
         assert(prompt_payload.notebook_id == "created-notebook", "highlight prompt notebook id was not sent")
         assert(prompt_payload.book and prompt_payload.book.title == "Book", "highlight prompt book title was not sent")
         assert(prompt_payload.book and prompt_payload.book.position == "25.0%", "highlight prompt book position was not sent")
+        assert(plugin.ui.highlight.closed_keep == true, "highlight dialog was not closed while keeping selection during ask")
+        assert(plugin.ui.highlight.cleared == true, "highlight selection was not cleared after successful ask")
 
         plugin.notebooklm_ui:ask_with_prompt(
             "Highlighted passage",
@@ -553,6 +570,19 @@ def main() -> None:
         custom_file:close()
         assert(custom_content:find("Custom highlighted passage", 1, true), "custom highlight content is missing")
         assert(custom_content:find("Prompt: Custom", 1, true), "custom prompt label is missing")
+
+        local before_no_auto_open = custom_viewer.last_opened
+        plugin.settings:write("open_answer_automatically", false)
+        plugin.notebooklm_ui:ask_with_prompt(
+            "Do not auto open this passage",
+            "Save the answer but do not open it.",
+            "No auto open"
+        )
+        assert(custom_viewer.last_opened == before_no_auto_open, "auto-open disabled ask unexpectedly changed viewer state")
+        local uimanager_no_auto_open = require("ui/uimanager")
+        local saved_message = uimanager_no_auto_open.shown[#uimanager_no_auto_open.shown]
+        assert(saved_message and saved_message.text and saved_message.text:find("answer saved", 1, true), "auto-open disabled ask did not show saved message")
+        plugin.settings:write("open_answer_automatically", true)
 
         local long_passage = string.rep("Long highlighted passage. ", 200)
         plugin.notebooklm_ui:ask_with_prompt(

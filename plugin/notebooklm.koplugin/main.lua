@@ -131,6 +131,14 @@ function NotebookLM:addToMainMenu(menu_items)
                             self:toggleUploadMode()
                         end,
                     },
+                    {
+                        text_func = function()
+                            return _("Open answers automatically: ") .. enabled_label(self.settings:read("open_answer_automatically"))
+                        end,
+                        callback = function()
+                            self:toggleOpenAnswerAutomatically()
+                        end,
+                    },
                 },
             },
         },
@@ -176,6 +184,10 @@ end
 function NotebookLM:toggleUploadMode()
     local current = self.settings:read("upload_mode")
     self.settings:write("upload_mode", current == "path" and "multipart" or "path")
+end
+
+function NotebookLM:toggleOpenAnswerAutomatically()
+    self.settings:write("open_answer_automatically", not self.settings:read("open_answer_automatically"))
 end
 
 function NotebookLM:togglePromptButtons()

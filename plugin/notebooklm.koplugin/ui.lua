@@ -65,6 +65,33 @@ function NotebookLMUI:_show_info(message)
     })
 end
 
+function NotebookLMUI:_close_reader_highlight(keep_highlight)
+    local highlight = self.plugin and self.plugin.ui and self.plugin.ui.highlight
+    if highlight and highlight.onClose then
+        local ok, err = pcall(function()
+            highlight:onClose(keep_highlight)
+        end)
+        if not ok then
+            logger.warn("NotebookLM: could not close reader highlight dialog", tostring(err))
+        end
+    elseif highlight and highlight.highlight_dialog then
+        UIManager:close(highlight.highlight_dialog)
+        highlight.highlight_dialog = nil
+    end
+end
+
+function NotebookLMUI:_clear_reader_highlight()
+    local highlight = self.plugin and self.plugin.ui and self.plugin.ui.highlight
+    if highlight and highlight.clear then
+        local ok, err = pcall(function()
+            highlight:clear()
+        end)
+        if not ok then
+            logger.warn("NotebookLM: could not clear reader highlight", tostring(err))
+        end
+    end
+end
+
 function NotebookLMUI:_book()
     return self.storage:get_book_context(self.plugin.ui)
 end
@@ -706,9 +733,10 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
     local book = self:_book()
     local loading = InfoMessage:new{
         icon = "book.opened",
-        text = _("Asking NotebookLM..."),
+        text = _("Asking NotebookLM...\nThis can take a moment."),
         timeout = 0,
     }
+    self:_close_reader_highlight(true)
     UIManager:show(loading)
     UIManager:scheduleIn(0.1, function()
         logger.info(
@@ -733,6 +761,7 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
             self:_show_error(err)
             return
         end
+        self:_clear_reader_highlight()
         self:show_answer({
             prompt_label = prompt_label,
             prompt = prompt,
@@ -742,7 +771,7 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
             sources_used = response.sources_used,
             references = response.references,
             citations = response.citations,
-        })
+        }, self.settings:read("open_answer_automatically") ~= false)
     end)
 end
 
@@ -758,7 +787,10 @@ local function reference_label(reference, index)
     return label .. " Reference"
 end
 
-function NotebookLMUI:show_answer(result)
+function NotebookLMUI:show_answer(result, open_answer)
+    if open_answer == nil then
+        open_answer = true
+    end
     local id = timestamp_id()
     local path = DataStorage:getSettingsDir() .. "/notebooklm-answer-" .. id .. ".md"
     local last_path = DataStorage:getSettingsDir() .. "/notebooklm-last-answer.md"
@@ -834,7 +866,12 @@ function NotebookLMUI:show_answer(result)
     end
     write_file(last_path)
     self:_remember_answer(result, path, id)
-    TextViewer.openFile(path)
+    if open_answer then
+        TextViewer.openFile(path)
+    else
+        self:_show_info("NotebookLM answer saved. Open it from NotebookLM answers.")
+    end
+    return path
 end
 
 return NotebookLMUI

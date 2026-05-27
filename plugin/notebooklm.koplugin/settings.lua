@@ -10,6 +10,7 @@ local Settings = {
         enable_upload = true,
         upload_mode = "multipart",
         show_prompt_buttons = true,
+        open_answer_automatically = true,
     },
 }
 
@@ -36,6 +37,7 @@ function Settings:asTable()
         enable_upload = self:read("enable_upload"),
         upload_mode = self:read("upload_mode"),
         show_prompt_buttons = self:read("show_prompt_buttons"),
+        open_answer_automatically = self:read("open_answer_automatically"),
     }
 end
 
