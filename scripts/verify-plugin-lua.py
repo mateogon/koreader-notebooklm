@@ -105,12 +105,22 @@ preload["ui/widget/confirmbox"] = function() return class() end
 preload["ui/widget/buttondialog"] = function() return class() end
 preload["ui/widget/infomessage"] = function() return class() end
 preload["ui/widget/textviewer"] = function()
-    return {
-        last_opened = nil,
-        openFile = function(path)
-            package.loaded["ui/widget/textviewer"].last_opened = path
-        end,
-    }
+    local TextViewer = class()
+    TextViewer.last_opened = nil
+    TextViewer.last_viewer = nil
+    function TextViewer:new(o)
+        o = o or {}
+        setmetatable(o, { __index = self })
+        self.last_viewer = o
+        if o.notebooklm_path then
+            self.last_opened = o.notebooklm_path
+        end
+        return o
+    end
+    function TextViewer.openFile(path)
+        package.loaded["ui/widget/textviewer"].last_opened = path
+    end
+    return TextViewer
 end
 preload["ui/font"] = function()
     return {
@@ -563,6 +573,12 @@ def main() -> None:
         assert(ask_payload.book and ask_payload.book.author == "Author", "ask book author was not sent")
         local viewer = require("ui/widget/textviewer")
         assert(viewer.last_opened and viewer.last_opened:find("/tmp/notebooklm%-answer%-"), "answer viewer was not opened with a saved answer")
+        assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Answer", "structured answer viewer did not open on Answer")
+        assert(viewer.last_viewer.text:find("Mock answer from bridge", 1, true), "structured answer viewer is missing answer text")
+        assert(not viewer.last_viewer.text:find("##", 1, true), "structured answer viewer exposed markdown headings")
+        viewer.last_viewer.buttons_table[2][2].callback()
+        assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - References", "references tab did not open")
+        assert(viewer.last_viewer.text:find("Reference text from uploaded source", 1, true), "references tab is missing cited text")
         local file = io.open(viewer.last_opened, "r")
         assert(file, "answer file was not written")
         local content = file:read("*all")
@@ -582,6 +598,7 @@ def main() -> None:
         assert(answers_dialog.buttons[1][1].text:find("Explica simple", 1, true), "answers list did not show question context first")
         answers_dialog.buttons[1][1].callback()
         assert(viewer.last_opened and viewer.last_opened:find("/tmp/notebooklm%-answer%-"), "saved answer did not reopen")
+        assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Answer", "saved answer did not reopen in structured viewer")
         plugin.notebooklm_ui:show_answers(function()
             plugin.notebooklm_ui:show_highlight_menu("History highlighted passage")
         end)

@@ -27,6 +27,38 @@ local function shorten(value, limit)
     return text:sub(1, math.max(1, limit - 3)) .. "..."
 end
 
+local function trim_blank_lines(lines)
+    while #lines > 0 and lines[1] == "" do
+        table.remove(lines, 1)
+    end
+    while #lines > 0 and lines[#lines] == "" do
+        table.remove(lines)
+    end
+    return lines
+end
+
+local function plain_line(line)
+    line = tostring(line or "")
+    line = line:gsub("^%s*#+%s*", "")
+    line = line:gsub("^%s*>%s?", "")
+    line = line:gsub("^%s*%*%s+", "- ")
+    line = line:gsub("%*%*", "")
+    line = line:gsub("`", "")
+    return line
+end
+
+local function plain_text(value)
+    local lines = {}
+    for line in tostring(value or ""):gmatch("([^\n]*)\n?") do
+        if line == "" and #lines > 0 and lines[#lines] == "" then
+            -- Collapse repeated blank lines.
+        else
+            table.insert(lines, plain_line(line))
+        end
+    end
+    return table.concat(trim_blank_lines(lines), "\n")
+end
+
 local function timestamp_id()
     local timestamp = os.date("!%Y%m%dT%H%M%SZ")
     local clock = math.floor((os.clock() or 0) * 1000)
@@ -595,7 +627,7 @@ function NotebookLMUI:show_answers(on_back)
                 text = label,
                 callback = function()
                     self:_close_input()
-                    TextViewer.openFile(entry.path)
+                    self:show_saved_answer(entry.path)
                 end,
                 hold_callback = function()
                     self:_show_info(shorten(entry.answer_preview or "", 220))
@@ -828,6 +860,204 @@ local function reference_label(reference, index)
     return label .. " Reference"
 end
 
+local function reference_body(reference, index)
+    local lines = {
+        string.format("%d. %s", index, reference_label(reference, index)),
+    }
+    local cited_text = reference.cited_text or reference.text
+    if cited_text and cited_text ~= "" then
+        table.insert(lines, "")
+        table.insert(lines, tostring(cited_text))
+    end
+    return table.concat(lines, "\n")
+end
+
+local function references_to_text(references)
+    if type(references) ~= "table" or #references == 0 then
+        return "No references returned."
+    end
+    local lines = {}
+    for index, reference in ipairs(references) do
+        table.insert(lines, reference_body(reference, index))
+        table.insert(lines, "")
+    end
+    return plain_text(table.concat(lines, "\n"))
+end
+
+local function citations_to_text(citations)
+    if type(citations) ~= "table" then
+        return "No citations returned."
+    end
+    local lines = {}
+    for citation, source_id in pairs(citations) do
+        table.insert(lines, "[" .. tostring(citation) .. "] " .. tostring(source_id))
+    end
+    if #lines == 0 then
+        return "No citations returned."
+    end
+    table.sort(lines)
+    return table.concat(lines, "\n")
+end
+
+local function sources_to_text(sources_used)
+    if type(sources_used) ~= "table" or #sources_used == 0 then
+        return "No sources returned."
+    end
+    local lines = {}
+    for _, source_id in ipairs(sources_used) do
+        table.insert(lines, tostring(source_id))
+    end
+    return table.concat(lines, "\n")
+end
+
+local function answer_sections_from_result(result, path)
+    local prompt_label = tostring(result.prompt_label or "Question")
+    local prompt = tostring(result.prompt or "")
+    local notebook_id = tostring(result.notebook_id or "")
+    return {
+        path = path,
+        prompt_label = prompt_label,
+        notebook_id = notebook_id,
+        answer = plain_text(result.answer or ""),
+        prompt = plain_text(table.concat({
+            "Prompt preset: " .. prompt_label,
+            "Question: " .. prompt,
+            "Notebook ID: " .. notebook_id,
+        }, "\n")),
+        selected = plain_text(result.selected_text or ""),
+        references = references_to_text(result.references),
+        citations = citations_to_text(result.citations),
+        sources = sources_to_text(result.sources_used),
+        raw = nil,
+    }
+end
+
+local function parse_saved_answer(content, path)
+    local parsed = {
+        path = path,
+        prompt_label = "Question",
+        prompt = "",
+        notebook_id = "",
+        selected = "",
+        answer = "",
+        references = "",
+        citations = "",
+        sources = "",
+        raw = content,
+    }
+    local buckets = {
+        selected = {},
+        answer = {},
+        references = {},
+        citations = {},
+        sources = {},
+    }
+    local section = nil
+    for line in tostring(content or ""):gmatch("([^\n]*)\n?") do
+        local prompt_label = line:match("^Prompt:%s*(.*)$")
+        local prompt = line:match("^Question:%s*(.*)$")
+        local notebook_id = line:match("^Notebook ID:%s*(.*)$")
+        if prompt_label then
+            parsed.prompt_label = prompt_label
+        elseif prompt then
+            parsed.prompt = prompt
+        elseif notebook_id then
+            parsed.notebook_id = notebook_id
+        elseif line == "## Selected text" then
+            section = "selected"
+        elseif line == "## Answer" then
+            section = "answer"
+        elseif line == "## References" then
+            section = "references"
+        elseif line == "## Citations" then
+            section = "citations"
+        elseif line == "## Sources used" then
+            section = "sources"
+        elseif section and buckets[section] then
+            table.insert(buckets[section], line)
+        end
+    end
+    parsed.answer = plain_text(table.concat(buckets.answer, "\n"))
+    parsed.selected = plain_text(table.concat(buckets.selected, "\n"))
+    parsed.references = plain_text(table.concat(buckets.references, "\n"))
+    parsed.citations = plain_text(table.concat(buckets.citations, "\n"))
+    parsed.sources = plain_text(table.concat(buckets.sources, "\n"))
+    parsed.prompt = plain_text(table.concat({
+        "Prompt preset: " .. tostring(parsed.prompt_label or "Question"),
+        "Question: " .. tostring(parsed.prompt or ""),
+        "Notebook ID: " .. tostring(parsed.notebook_id or ""),
+    }, "\n"))
+    return parsed
+end
+
+function NotebookLMUI:show_saved_answer(path)
+    local file = io.open(path, "r")
+    if not file then
+        self:_show_error("Could not open NotebookLM answer file.")
+        return
+    end
+    local content = file:read("*all")
+    file:close()
+    self:show_answer_viewer(parse_saved_answer(content, path), "answer")
+end
+
+function NotebookLMUI:show_answer_viewer(sections, section_id)
+    section_id = section_id or "answer"
+    local section_titles = {
+        answer = "Answer",
+        prompt = "Prompt",
+        citations = "Citations",
+        references = "References",
+        selected = "Selected text",
+        sources = "Sources",
+        raw = "Raw",
+    }
+    local text = sections[section_id]
+    if not text or text == "" then
+        text = "No content for this section."
+    end
+    local viewer
+    local function switch_to(next_section)
+        return function()
+            UIManager:close(viewer)
+            self:show_answer_viewer(sections, next_section)
+        end
+    end
+    local buttons = {
+        {
+            { text = _("Answer"), callback = switch_to("answer") },
+            { text = _("Prompt"), callback = switch_to("prompt") },
+        },
+        {
+            { text = _("Citations"), callback = switch_to("citations") },
+            { text = _("References"), callback = switch_to("references") },
+        },
+        {
+            { text = _("Selected"), callback = switch_to("selected") },
+            { text = _("Sources"), callback = switch_to("sources") },
+        },
+        {
+            { text = _("Raw"), callback = switch_to("raw") },
+            {
+                text = _("Close"),
+                callback = function()
+                    UIManager:close(viewer)
+                end,
+            },
+        },
+    }
+    viewer = TextViewer:new{
+        title = "NotebookLM - " .. tostring(section_titles[section_id] or section_id),
+        title_multilines = true,
+        text = text,
+        text_type = "lookup",
+        buttons_table = buttons,
+        notebooklm_path = sections.path,
+        notebooklm_section = section_id,
+    }
+    UIManager:show(viewer)
+end
+
 function NotebookLMUI:show_answer(result, open_answer)
     if open_answer == nil then
         open_answer = true
@@ -908,7 +1138,7 @@ function NotebookLMUI:show_answer(result, open_answer)
     write_file(last_path)
     self:_remember_answer(result, path, id)
     if open_answer then
-        TextViewer.openFile(path)
+        self:show_saved_answer(path)
     else
         self:_show_info("NotebookLM answer saved. Open it from NotebookLM answers.")
     end
