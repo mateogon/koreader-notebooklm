@@ -67,18 +67,18 @@ class NlmNotebookLMAdapter:
             len(request.prompt or ""),
         )
         question = self._build_question(request)
+        args = [
+            "notebook",
+            "query",
+            "--json",
+            "--timeout",
+            str(self.config.nlm_timeout_seconds),
+        ]
+        if request.conversation_id:
+            args.extend(["--conversation-id", request.conversation_id])
+        args.extend([notebook_id, question])
         data = self._run_json(
-            self._with_profile(
-                [
-                    "notebook",
-                    "query",
-                    "--json",
-                    "--timeout",
-                    str(self.config.nlm_timeout_seconds),
-                    notebook_id,
-                    question,
-                ]
-            ),
+            self._with_profile(args),
             timeout=self.config.nlm_timeout_seconds + 10,
         )
         if not isinstance(data, dict):

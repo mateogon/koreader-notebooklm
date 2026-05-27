@@ -74,6 +74,7 @@ function NotebookLMUI:new(opts)
         settings = opts.settings,
         prompts = opts.prompts,
         input_dialog = nil,
+        active_ask = false,
     }, { __index = self })
 end
 
@@ -174,6 +175,7 @@ function NotebookLMUI:_remember_answer(result, path, id)
         notebook_id = tostring(result.notebook_id or ""),
         prompt_label = tostring(result.prompt_label or "Question"),
         question = tostring(result.prompt or ""),
+        conversation_id = tostring(result.conversation_id or ""),
         selected_preview = shorten(result.selected_text or "", 120),
         answer_preview = shorten(result.answer or "", 180),
     })
@@ -760,15 +762,28 @@ function NotebookLMUI:show_custom_question(highlighted_text, on_back)
     UIManager:show(self.input_dialog)
 end
 
-function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
-    local link = self:_sync_bridge_link()
+function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label, options)
+    options = options or {}
+    if self.active_ask then
+        self:_show_error("NotebookLM question already running.")
+        return
+    end
+
+    local link = nil
+    if options.notebook_id then
+        link = { notebook_id = options.notebook_id }
+    else
+        link = self:_sync_bridge_link()
+    end
     if not link or not link.notebook_id then
         self:_show_error("This book is not linked to a NotebookLM notebook.")
         return
     end
 
     local book = self:_book()
-    self:_close_reader_highlight(false)
+    if options.close_highlight ~= false then
+        self:_close_reader_highlight(false)
+    end
     logger.info(
         "NotebookLM: starting ask job",
         "notebook", link.notebook_id,
@@ -776,8 +791,10 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
         "selected_chars", tostring(#highlighted_text)
     )
 
+    self.active_ask = true
     local job, err = self.client:start_ask_job({
         notebook_id = link.notebook_id,
+        conversation_id = options.conversation_id,
         selected_text = highlighted_text,
         prompt = prompt,
         book = {
@@ -788,10 +805,12 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
         },
     })
     if err then
+        self.active_ask = false
         self:_show_error(err)
         return
     end
     if not job or not job.job_id then
+        self.active_ask = false
         self:_show_error("Bridge did not return an ask job ID.")
         return
     end
@@ -800,6 +819,7 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
         prompt = prompt,
         selected_text = highlighted_text,
         fallback_notebook_id = link.notebook_id,
+        conversation_id = options.conversation_id,
         poll_count = 0,
     })
 end
@@ -807,6 +827,7 @@ end
 function NotebookLMUI:poll_ask_job(job_id, context)
     context.poll_count = (context.poll_count or 0) + 1
     if context.poll_count > ASK_MAX_POLLS then
+        self.active_ask = false
         self:_show_error("NotebookLM answer timed out. Check NotebookLM answers later.")
         return
     end
@@ -814,10 +835,12 @@ function NotebookLMUI:poll_ask_job(job_id, context)
     UIManager:scheduleIn(ASK_POLL_INTERVAL_SECONDS, function()
         local job, err = self.client:get_ask_job(job_id)
         if err then
+            self.active_ask = false
             self:_show_error(err)
             return
         end
         if not job then
+            self.active_ask = false
             self:_show_error("Bridge did not return ask job status.")
             return
         end
@@ -826,21 +849,25 @@ function NotebookLMUI:poll_ask_job(job_id, context)
             return
         end
         if job.status == "failed" then
+            self.active_ask = false
             self:_show_error(job.error or "NotebookLM ask job failed.")
             return
         end
         if job.status ~= "succeeded" or type(job.result) ~= "table" then
+            self.active_ask = false
             self:_show_error("NotebookLM ask job returned an unknown status.")
             return
         end
 
         local response = job.result
+        self.active_ask = false
         self:show_answer({
             prompt_label = context.prompt_label,
             prompt = context.prompt,
             selected_text = context.selected_text,
             answer = response.answer,
             notebook_id = response.notebook_id or context.fallback_notebook_id,
+            conversation_id = response.conversation_id or context.conversation_id,
             sources_used = response.sources_used,
             references = response.references,
             citations = response.citations,
@@ -914,15 +941,18 @@ local function answer_sections_from_result(result, path)
     local prompt_label = tostring(result.prompt_label or "Question")
     local prompt = tostring(result.prompt or "")
     local notebook_id = tostring(result.notebook_id or "")
+    local conversation_id = tostring(result.conversation_id or "")
     return {
         path = path,
         prompt_label = prompt_label,
         notebook_id = notebook_id,
+        conversation_id = conversation_id,
         answer = plain_text(result.answer or ""),
         prompt = plain_text(table.concat({
             "Prompt preset: " .. prompt_label,
             "Question: " .. prompt,
             "Notebook ID: " .. notebook_id,
+            "Conversation ID: " .. conversation_id,
         }, "\n")),
         selected = plain_text(result.selected_text or ""),
         references = references_to_text(result.references),
@@ -938,6 +968,7 @@ local function parse_saved_answer(content, path)
         prompt_label = "Question",
         prompt = "",
         notebook_id = "",
+        conversation_id = "",
         selected = "",
         answer = "",
         references = "",
@@ -957,12 +988,15 @@ local function parse_saved_answer(content, path)
         local prompt_label = line:match("^Prompt:%s*(.*)$")
         local prompt = line:match("^Question:%s*(.*)$")
         local notebook_id = line:match("^Notebook ID:%s*(.*)$")
+        local conversation_id = line:match("^Conversation ID:%s*(.*)$")
         if prompt_label then
             parsed.prompt_label = prompt_label
         elseif prompt then
             parsed.prompt = prompt
         elseif notebook_id then
             parsed.notebook_id = notebook_id
+        elseif conversation_id then
+            parsed.conversation_id = conversation_id
         elseif line == "## Selected text" then
             section = "selected"
         elseif line == "## Answer" then
@@ -986,6 +1020,7 @@ local function parse_saved_answer(content, path)
         "Prompt preset: " .. tostring(parsed.prompt_label or "Question"),
         "Question: " .. tostring(parsed.prompt or ""),
         "Notebook ID: " .. tostring(parsed.notebook_id or ""),
+        "Conversation ID: " .. tostring(parsed.conversation_id or ""),
     }, "\n"))
     return parsed
 end
@@ -1003,6 +1038,114 @@ end
 
 function NotebookLMUI:show_answer_viewer(sections, section_id)
     section_id = section_id or "answer"
+    if section_id ~= "answer" then
+        self:show_answer_details_viewer(sections, section_id)
+        return
+    end
+    local text = sections.answer
+    if not text or text == "" then
+        text = "No content for this section."
+    end
+    local viewer
+    local function ask_followup(use_conversation)
+        return function()
+            UIManager:close(viewer)
+            local conversation_id = nil
+            if use_conversation and sections.conversation_id and sections.conversation_id ~= "" then
+                conversation_id = sections.conversation_id
+            end
+            self:show_answer_question(
+                sections,
+                conversation_id,
+                function()
+                    self:show_answer_viewer(sections, "answer")
+                end
+            )
+        end
+    end
+    local buttons = {
+        {
+            { text = _("Follow-up"), callback = ask_followup(true) },
+            { text = _("New question"), callback = ask_followup(false) },
+        },
+        {
+            {
+                text = _("Details"),
+                callback = function()
+                    UIManager:close(viewer)
+                    self:show_answer_details_viewer(sections, "prompt")
+                end,
+            },
+            {
+                text = _("Close"),
+                callback = function()
+                    UIManager:close(viewer)
+                end,
+            },
+        },
+    }
+    viewer = TextViewer:new{
+        title = "NotebookLM - Answer",
+        title_multilines = true,
+        text = text,
+        text_type = "lookup",
+        buttons_table = buttons,
+        notebooklm_path = sections.path,
+        notebooklm_section = "answer",
+    }
+    UIManager:show(viewer)
+end
+
+function NotebookLMUI:show_answer_question(sections, conversation_id, on_back)
+    local has_conversation = conversation_id and conversation_id ~= ""
+    local title = has_conversation and _("NotebookLM follow-up") or _("NotebookLM question")
+    self.input_dialog = InputDialog:new{
+        title = title,
+        input_hint = _("Ask about this notebook..."),
+        input_type = "text",
+        input_height = 6,
+        allow_newline = true,
+        input_multiline = true,
+        buttons = {
+            {
+                {
+                    text = on_back and _("Back") or _("Cancel"),
+                    callback = function()
+                        self:_close_input()
+                        if on_back then
+                            on_back()
+                        end
+                    end,
+                },
+                {
+                    text = _("Ask"),
+                    is_enter_default = true,
+                    callback = function()
+                        local question = self.input_dialog:getInputText()
+                        if not question or question == "" then
+                            self:_show_error("Enter a question first.")
+                            return
+                        end
+                        local selected = sections.selected
+                        if not selected or selected == "" then
+                            selected = "Question asked from the NotebookLM answer viewer."
+                        end
+                        self:_close_input()
+                        self:send_ask(selected, question, has_conversation and "Follow-up" or "Question", {
+                            notebook_id = sections.notebook_id,
+                            conversation_id = has_conversation and conversation_id or nil,
+                            close_highlight = false,
+                        })
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(self.input_dialog)
+end
+
+function NotebookLMUI:show_answer_details_viewer(sections, section_id)
+    section_id = section_id or "prompt"
     local section_titles = {
         answer = "Answer",
         prompt = "Prompt",
@@ -1020,7 +1163,7 @@ function NotebookLMUI:show_answer_viewer(sections, section_id)
     local function switch_to(next_section)
         return function()
             UIManager:close(viewer)
-            self:show_answer_viewer(sections, next_section)
+            self:show_answer_details_viewer(sections, next_section)
         end
     end
     local buttons = {
@@ -1039,9 +1182,10 @@ function NotebookLMUI:show_answer_viewer(sections, section_id)
         {
             { text = _("Raw"), callback = switch_to("raw") },
             {
-                text = _("Close"),
+                text = _("Back"),
                 callback = function()
                     UIManager:close(viewer)
+                    self:show_answer_viewer(sections, "answer")
                 end,
             },
         },
@@ -1071,6 +1215,7 @@ function NotebookLMUI:show_answer(result, open_answer)
         "Prompt: " .. tostring(result.prompt_label or "Question"),
         "Question: " .. tostring(result.prompt or ""),
         "Notebook ID: " .. tostring(result.notebook_id or ""),
+        "Conversation ID: " .. tostring(result.conversation_id or ""),
         "",
         "## Selected text",
         "",

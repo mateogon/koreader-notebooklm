@@ -43,6 +43,7 @@ class AskRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     notebook_id: str | None = None
+    conversation_id: str | None = None
     selected_text: str = Field(min_length=1)
     prompt: str = Field(min_length=1)
     book: BookContext | None = None

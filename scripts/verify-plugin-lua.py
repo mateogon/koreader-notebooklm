@@ -312,6 +312,7 @@ preload["json"] = function()
                     answer = "Mock answer from bridge\n\n" .. string.rep("Long answer paragraph from bridge. ", 200),
                     notebook_id = "created-notebook",
                     adapter = "mock",
+                    conversation_id = "mock-conversation",
                     sources_used = { "source-1" },
                     citations = { ["1"] = "source-1" },
                     references = {
@@ -338,6 +339,7 @@ preload["json"] = function()
                         answer = "Mock answer from bridge\n\n" .. string.rep("Long answer paragraph from bridge. ", 200),
                         notebook_id = "created-notebook",
                         adapter = "mock",
+                        conversation_id = "mock-conversation",
                         sources_used = { "source-1" },
                         citations = { ["1"] = "source-1" },
                         references = {
@@ -576,15 +578,31 @@ def main() -> None:
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Answer", "structured answer viewer did not open on Answer")
         assert(viewer.last_viewer.text:find("Mock answer from bridge", 1, true), "structured answer viewer is missing answer text")
         assert(not viewer.last_viewer.text:find("##", 1, true), "structured answer viewer exposed markdown headings")
+        assert(viewer.last_viewer.buttons_table[1][1].text == "Follow-up", "answer viewer missing follow-up action")
+        assert(viewer.last_viewer.buttons_table[1][2].text == "New question", "answer viewer missing new question action")
+        assert(viewer.last_viewer.buttons_table[2][1].text == "Details", "answer viewer missing details action")
+        viewer.last_viewer.buttons_table[2][1].callback()
+        assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Prompt", "details did not open prompt section")
         viewer.last_viewer.buttons_table[2][2].callback()
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - References", "references tab did not open")
         assert(viewer.last_viewer.text:find("Reference text from uploaded source", 1, true), "references tab is missing cited text")
+        viewer.last_viewer.buttons_table[4][2].callback()
+        assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Answer", "details back did not return to answer")
+        viewer.last_viewer.buttons_table[1][1].callback()
+        local followup_dialog = plugin.notebooklm_ui.input_dialog
+        assert(followup_dialog and followup_dialog.title == "NotebookLM follow-up", "follow-up input did not open")
+        followup_dialog.input = "Follow up on this answer"
+        followup_dialog.buttons[1][2].callback()
+        local followup_payload = _G.__last_encoded_value
+        assert(followup_payload and followup_payload.conversation_id == "mock-conversation", "follow-up conversation id was not sent")
+        assert(followup_payload.prompt == "Follow up on this answer", "follow-up prompt was not sent")
         local file = io.open(viewer.last_opened, "r")
         assert(file, "answer file was not written")
         local content = file:read("*all")
         file:close()
         assert(content:find("Mock answer from bridge", 1, true), "answer content is missing")
         assert(content:find("Highlighted passage", 1, true), "highlight content is missing")
+        assert(content:find("Conversation ID: mock%-conversation"), "conversation id is missing")
         assert(content:find("## Sources used", 1, true), "sources used section is missing")
         assert(content:find("source%-1"), "source id is missing")
         assert(content:find("Reference text from uploaded source", 1, true), "cited text is missing")
@@ -595,7 +613,7 @@ def main() -> None:
         plugin.notebooklm_ui:show_answers()
         local answers_dialog = plugin.notebooklm_ui.input_dialog
         assert(answers_dialog and answers_dialog.title:find("NotebookLM answers", 1, true), "answers list did not render")
-        assert(answers_dialog.buttons[1][1].text:find("Explica simple", 1, true), "answers list did not show question context first")
+        assert(answers_dialog.buttons[1][1].text:find("Follow%-up") or answers_dialog.buttons[1][1].text:find("Explica simple", 1, true), "answers list did not show question context first")
         answers_dialog.buttons[1][1].callback()
         assert(viewer.last_opened and viewer.last_opened:find("/tmp/notebooklm%-answer%-"), "saved answer did not reopen")
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Answer", "saved answer did not reopen in structured viewer")

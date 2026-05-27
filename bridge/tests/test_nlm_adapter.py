@@ -80,6 +80,29 @@ def test_nlm_ask_accepts_cli_value_wrapper(monkeypatch):
     assert response.answer == "Wrapped answer"
 
 
+def test_nlm_ask_passes_conversation_id(monkeypatch):
+    calls = []
+
+    def fake_run(command, **kwargs):
+        calls.append(command)
+        return SimpleNamespace(
+            returncode=0,
+            stdout='{"answer":"Follow-up answer","conversation_id":"conv1"}',
+            stderr="",
+        )
+
+    monkeypatch.setattr("koreader_notebooklm_bridge.adapters.notebooklm.subprocess.run", fake_run)
+    adapter = NlmNotebookLMAdapter(BridgeConfig(adapter="nlm", default_notebook_id="default-nb"))
+
+    response = adapter.ask(
+        AskRequest(selected_text="Text.", prompt="Follow up.", conversation_id="conv1")
+    )
+
+    assert response.answer == "Follow-up answer"
+    assert "--conversation-id" in calls[0]
+    assert calls[0][calls[0].index("--conversation-id") + 1] == "conv1"
+
+
 def test_nlm_ask_requires_notebook_id():
     adapter = NlmNotebookLMAdapter(BridgeConfig(adapter="nlm"))
 

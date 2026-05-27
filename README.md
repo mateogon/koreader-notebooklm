@@ -18,14 +18,16 @@ Implemented and locally validated:
 - Book-to-notebook linking and relinking.
 - Preset and custom prompts.
 - Local answer history in KOReader.
-- Optional automatic answer opening.
+- Structured answer viewer with `Follow-up`, `New question`, `Details`, and optional automatic opening.
 - Local FastAPI bridge with `mock` and `nlm` adapters.
 - Background `/ask/jobs` flow so long NotebookLM answers do not block KOReader.
+- Conversation continuity through NotebookLM `conversation_id` for follow-up questions.
 - Basic source upload path, including preserving file extensions for EPUB/PDF detection.
 
 Known gaps:
 
 - Real Kindle/device validation is still pending.
+- Real create-and-upload from KOReader UI needs more validation and hardening.
 - Bridge LAN security token is not implemented yet.
 - Uploads for large books/PDFs still need memory and timeout hardening.
 - NotebookLM auth is delegated to the local `nlm` CLI profile.
@@ -40,6 +42,7 @@ docs/     Architecture, setup notes, API, roadmap, validation notes
 examples/ Example requests and config snippets
 scripts/  Dev and smoke-test helpers
 research/ Research notes and reference links
+AGENTS.md Development guide for future agents
 ```
 
 ## Quick Start: macOS Development
@@ -87,6 +90,7 @@ http://127.0.0.1:8765
 4. Choose a preset prompt or enter a custom question.
 5. Continue reading while the bridge asks NotebookLM in the background.
 6. Open the answer automatically, or find it later under `NotebookLM answers`.
+7. From an answer, ask a follow-up in the same NotebookLM conversation or start a new question.
 
 ## Security
 
@@ -116,7 +120,8 @@ uv run --extra dev pytest
 Run the Lua plugin smoke test:
 
 ```sh
-uv run --with lupa scripts/verify-plugin-lua.py
+cd bridge
+uv run --extra dev python ../scripts/verify-plugin-lua.py
 ```
 
 Check the bridge:
@@ -127,8 +132,8 @@ curl http://127.0.0.1:8765/health
 
 ## Next Steps
 
-- Validate the async ask flow on KOReader macOS with real `nlm`.
 - Validate on a physical Kindle or Android/Termux KOReader setup.
+- Validate real create-and-upload from KOReader UI with more EPUB/PDF samples.
 - Add an optional bridge API token for LAN use.
 - Improve upload handling for large files and PDFs.
 - Improve answer notification UX while jobs are running.
