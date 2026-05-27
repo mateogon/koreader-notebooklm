@@ -68,6 +68,12 @@ With the bridge running in real `nlm` mode, run the protected EPUB smoke:
 KOREADER_NOTEBOOKLM_REAL_SMOKE=1 ../scripts/smoke-real-epub.sh
 ```
 
+With the bridge running in experimental `nlm-lite` mode, run:
+
+```bash
+../scripts/smoke-nlm-lite.sh
+```
+
 Endpoints:
 
 - `GET /health`

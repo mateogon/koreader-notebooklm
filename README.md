@@ -157,6 +157,7 @@ curl http://127.0.0.1:8765/health
 - [Architecture](docs/architecture.md)
 - [Bridge API](docs/api.md)
 - [macOS setup](docs/setup-mac.md)
+- [Fresh PC auth setup](docs/setup-pc-auth.md)
 - [KOReader setup](docs/setup-koreader.md)
 - [Kindle setup](docs/setup-kindle.md)
 - [Roadmap](docs/roadmap.md)
