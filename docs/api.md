@@ -10,8 +10,13 @@ These endpoints are implemented in the local bridge. In `mock` mode they return 
 - `POST /sources/upload`
 - `POST /sources/upload-file`
 - `POST /ask`
+- `POST /ask/jobs`
+- `GET /ask/jobs/{job_id}`
 
 ## `POST /ask`
+
+Synchronous ask endpoint. Useful for scripts and smoke tests, but KOReader
+should prefer `/ask/jobs` so long NotebookLM calls do not block the reader UI.
 
 Request:
 
@@ -26,6 +31,58 @@ Request:
     "path": "/mnt/us/documents/book.epub",
     "position": "chapter 1 / 10%"
   }
+}
+```
+
+## `POST /ask/jobs`
+
+Starts a background NotebookLM ask job and returns immediately.
+
+Request body is the same as `POST /ask`.
+
+Response:
+
+```json
+{
+  "ok": true,
+  "job_id": "job-id",
+  "status": "queued"
+}
+```
+
+## `GET /ask/jobs/{job_id}`
+
+Polls a background ask job.
+
+Response while running:
+
+```json
+{
+  "ok": true,
+  "job_id": "job-id",
+  "status": "running",
+  "result": null,
+  "error": null
+}
+```
+
+Response when complete:
+
+```json
+{
+  "ok": true,
+  "job_id": "job-id",
+  "status": "succeeded",
+  "result": {
+    "ok": true,
+    "answer": "Answer text.",
+    "notebook_id": "notebook-id",
+    "adapter": "nlm",
+    "sources_used": [],
+    "citations": {},
+    "references": []
+  },
+  "error": null
 }
 ```
 

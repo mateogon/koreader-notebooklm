@@ -59,6 +59,20 @@ class AskResponse(BaseModel):
     references: list[dict[str, object]] = Field(default_factory=list)
 
 
+class AskJobCreateResponse(BaseModel):
+    ok: bool = True
+    job_id: str
+    status: str = "queued"
+
+
+class AskJobResponse(BaseModel):
+    ok: bool = True
+    job_id: str
+    status: str
+    result: AskResponse | None = None
+    error: str | None = None
+
+
 class BookLinkRequest(BaseModel):
     book_id: str = Field(min_length=1)
     notebook_id: str = Field(min_length=1)

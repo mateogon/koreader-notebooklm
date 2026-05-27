@@ -12,6 +12,8 @@ local _ = require("gettext")
 
 local NotebookLMUI = {}
 local MAX_ANSWER_HISTORY = 30
+local ASK_POLL_INTERVAL_SECONDS = 2
+local ASK_MAX_POLLS = 120
 
 local function compact_text(value)
     return tostring(value or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
@@ -731,43 +733,81 @@ function NotebookLMUI:send_ask(highlighted_text, prompt, prompt_label)
     end
 
     local book = self:_book()
-    local loading = InfoMessage:new{
-        icon = "book.opened",
-        text = _("Asking NotebookLM...\nThis can take a moment."),
-        timeout = 0,
-    }
     self:_close_reader_highlight(true)
-    UIManager:show(loading)
-    UIManager:scheduleIn(0.1, function()
-        logger.info(
-            "NotebookLM: sending ask",
-            "notebook", link.notebook_id,
-            "prompt_label", tostring(prompt_label),
-            "selected_chars", tostring(#highlighted_text)
-        )
-        local response, err = self.client:ask({
-            notebook_id = link.notebook_id,
-            selected_text = highlighted_text,
-            prompt = prompt,
-            book = {
-                title = book.title,
-                author = book.author,
-                path = book.path,
-                position = book.position,
-            },
-        })
-        UIManager:close(loading)
+    self:_show_info("NotebookLM is thinking. You can keep reading.")
+    logger.info(
+        "NotebookLM: starting ask job",
+        "notebook", link.notebook_id,
+        "prompt_label", tostring(prompt_label),
+        "selected_chars", tostring(#highlighted_text)
+    )
+
+    local job, err = self.client:start_ask_job({
+        notebook_id = link.notebook_id,
+        selected_text = highlighted_text,
+        prompt = prompt,
+        book = {
+            title = book.title,
+            author = book.author,
+            path = book.path,
+            position = book.position,
+        },
+    })
+    if err then
+        self:_show_error(err)
+        return
+    end
+    if not job or not job.job_id then
+        self:_show_error("Bridge did not return an ask job ID.")
+        return
+    end
+    self:poll_ask_job(job.job_id, {
+        prompt_label = prompt_label,
+        prompt = prompt,
+        selected_text = highlighted_text,
+        fallback_notebook_id = link.notebook_id,
+        poll_count = 0,
+    })
+end
+
+function NotebookLMUI:poll_ask_job(job_id, context)
+    context.poll_count = (context.poll_count or 0) + 1
+    if context.poll_count > ASK_MAX_POLLS then
+        self:_show_error("NotebookLM answer timed out. Check NotebookLM answers later.")
+        return
+    end
+
+    UIManager:scheduleIn(ASK_POLL_INTERVAL_SECONDS, function()
+        local job, err = self.client:get_ask_job(job_id)
         if err then
             self:_show_error(err)
             return
         end
+        if not job then
+            self:_show_error("Bridge did not return ask job status.")
+            return
+        end
+        if job.status == "queued" or job.status == "running" then
+            self:poll_ask_job(job_id, context)
+            return
+        end
+        if job.status == "failed" then
+            self:_show_error(job.error or "NotebookLM ask job failed.")
+            return
+        end
+        if job.status ~= "succeeded" or type(job.result) ~= "table" then
+            self:_show_error("NotebookLM ask job returned an unknown status.")
+            return
+        end
+
+        local response = job.result
         self:_clear_reader_highlight()
         self:show_answer({
-            prompt_label = prompt_label,
-            prompt = prompt,
-            selected_text = highlighted_text,
+            prompt_label = context.prompt_label,
+            prompt = context.prompt,
+            selected_text = context.selected_text,
             answer = response.answer,
-            notebook_id = response.notebook_id or link.notebook_id,
+            notebook_id = response.notebook_id or context.fallback_notebook_id,
             sources_used = response.sources_used,
             references = response.references,
             citations = response.citations,

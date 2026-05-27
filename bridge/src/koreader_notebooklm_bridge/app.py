@@ -13,6 +13,7 @@ from .routes.books import router as books_router
 from .routes.health import router as health_router
 from .routes.notebooks import router as notebooks_router
 from .routes.sources import router as sources_router
+from .services.ask_jobs import AskJobStore
 from .store import BookMappingStore
 
 
@@ -26,6 +27,7 @@ def create_app(config: BridgeConfig | None = None) -> FastAPI:
     app.state.config = bridge_config
     app.state.adapter = create_adapter(bridge_config)
     app.state.book_store = BookMappingStore(bridge_config.data_dir)
+    app.state.ask_jobs = AskJobStore()
     app.include_router(health_router)
     app.include_router(notebooks_router)
     app.include_router(books_router)

@@ -4,6 +4,7 @@ from fastapi import Request
 
 from ..adapters.base import NotebookLMAdapter
 from ..config import BridgeConfig
+from ..services.ask_jobs import AskJobStore
 from ..store import BookMappingStore
 
 
@@ -17,3 +18,7 @@ def get_adapter(request: Request) -> NotebookLMAdapter:
 
 def get_book_store(request: Request) -> BookMappingStore:
     return request.app.state.book_store
+
+
+def get_ask_jobs(request: Request) -> AskJobStore:
+    return request.app.state.ask_jobs

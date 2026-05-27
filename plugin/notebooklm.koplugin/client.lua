@@ -36,12 +36,12 @@ function Client:_get(path, timeout)
     return self.http.get(self:_bridge_url(), path, timeout or self:_timeout())
 end
 
-function Client:_post(path, payload)
+function Client:_post(path, payload, timeout)
     local ok, err = self:_ensure_bridge()
     if not ok then
         return nil, err
     end
-    return self.http.post(self:_bridge_url(), path, payload, self:_timeout())
+    return self.http.post(self:_bridge_url(), path, payload, timeout or self:_timeout())
 end
 
 function Client:_delete(path)
@@ -118,6 +118,14 @@ end
 
 function Client:ask(request)
     return self:_post("/ask", request)
+end
+
+function Client:start_ask_job(request)
+    return self:_post("/ask/jobs", request, self:_short_timeout())
+end
+
+function Client:get_ask_job(job_id)
+    return self:_get("/ask/jobs/" .. self.http.path_escape(job_id), self:_short_timeout())
 end
 
 return Client

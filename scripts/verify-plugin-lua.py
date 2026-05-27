@@ -207,6 +207,10 @@ preload["socket.http"] = function()
                 _G.__path_upload_seen = true
                 _G.__last_path_upload_payload = _G.__last_encoded_value
                 body = "UPLOAD_SOURCE"
+            elseif url:find("/ask/jobs/", 1, true) and method == "GET" then
+                body = "ASK_JOB_DONE"
+            elseif url:find("/ask/jobs", 1, true) and method == "POST" then
+                body = "ASK_JOB"
             elseif url:find("/ask", 1, true) then
                 body = "ASK"
             end
@@ -305,6 +309,33 @@ preload["json"] = function()
                             source_id = "source-1",
                             citation_number = 1,
                             cited_text = "Reference text from uploaded source",
+                        },
+                    },
+                }
+            elseif value == "ASK_JOB" then
+                return {
+                    ok = true,
+                    job_id = "mock-ask-job",
+                    status = "queued",
+                }
+            elseif value == "ASK_JOB_DONE" then
+                return {
+                    ok = true,
+                    job_id = "mock-ask-job",
+                    status = "succeeded",
+                    result = {
+                        ok = true,
+                        answer = "Mock answer from bridge\n\n" .. string.rep("Long answer paragraph from bridge. ", 200),
+                        notebook_id = "created-notebook",
+                        adapter = "mock",
+                        sources_used = { "source-1" },
+                        citations = { ["1"] = "source-1" },
+                        references = {
+                            {
+                                source_id = "source-1",
+                                citation_number = 1,
+                                cited_text = "Reference text from uploaded source",
+                            },
                         },
                     },
                 }
