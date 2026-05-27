@@ -33,4 +33,27 @@ function AuthBundle.load(path)
     return decoded
 end
 
+function AuthBundle.cookie_header(auth)
+    local cookies = auth and auth.cookies
+    if type(cookies) ~= "table" then
+        return ""
+    end
+    local parts = {}
+    if type(cookies[1]) == "table" then
+        for _, cookie in ipairs(cookies) do
+            if type(cookie.name) == "string" and type(cookie.value) == "string" then
+                parts[#parts + 1] = cookie.name .. "=" .. cookie.value
+            end
+        end
+    else
+        for name, value in pairs(cookies) do
+            if name ~= "__array" and name ~= "n" and type(value) ~= "table" then
+                parts[#parts + 1] = tostring(name) .. "=" .. tostring(value)
+            end
+        end
+        table.sort(parts)
+    end
+    return table.concat(parts, "; ")
+end
+
 return AuthBundle

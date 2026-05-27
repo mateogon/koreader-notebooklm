@@ -198,10 +198,12 @@ It includes:
 - `codec.lua`: small JSON codec used by this spike so `null` positions are
   preserved in private NotebookLM request arrays.
 - `auth_bundle.lua`: external auth bundle loader and validator.
+- `transport.lua`: direct `ssl.https`/`socket.http` form POST transport with
+  NotebookLM cookies, CSRF, origin, referer, and `X-Same-Domain` headers.
 - `rpc.lua`: private RPC constants and request builders.
 - `parsing.lua`: sanitized batchexecute/query response parsing.
-- `client.lua`: minimal feature-flagged facade for request building and fixture
-  parsing.
+- `client.lua`: minimal feature-flagged facade for list notebooks, get
+  notebook, and ask.
 
 The bridge UX remains the default. The direct client reports enabled only when
 settings contain:
@@ -211,8 +213,31 @@ backend = lua-direct
 ```
 
 This spike intentionally does not perform live NotebookLM HTTPS requests from
-KOReader yet. It also does not implement Lua upload, Lua browser login, auth
-export, or source creation as a user-facing feature.
+the normal highlight UX yet. It also does not implement Lua upload, Lua browser
+login, auth export, or source creation as a user-facing feature.
+
+The macOS KOReader runtime exposes a debug path under:
+
+```text
+NotebookLM -> Settings -> Lua direct smoke
+```
+
+To use it:
+
+1. Set `NotebookLM -> Settings -> Backend` to `lua-direct`.
+2. Set `Lua direct auth bundle` to an auth bundle path outside the repo.
+3. Optionally set `Lua direct notebook` to a real notebook ID.
+4. Run `Lua direct smoke`.
+
+The smoke performs:
+
+```text
+list_notebooks -> get_notebook -> ask
+```
+
+It is intentionally synchronous and debug-only. The normal selected-text UX
+still goes through the bridge unless this backend is explicitly enabled, and
+upload remains unsupported in Lua direct mode.
 
 Run the Lua spike tests through the existing verifier:
 

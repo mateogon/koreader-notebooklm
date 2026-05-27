@@ -233,6 +233,49 @@ preload["socket.http"] = function()
     }
 end
 
+preload["ssl.https"] = function()
+    _G.__direct_requests = {}
+    local function read_fixture(name)
+        local path = _G.nlm_lite_fixture_dir .. "/" .. name
+        local file = assert(io.open(path, "r"), "missing fixture: " .. path)
+        local body = file:read("*all")
+        file:close()
+        return body
+    end
+    return {
+        request = function(req)
+            local chunks = {}
+            if req.source then
+                while true do
+                    local chunk = req.source()
+                    if chunk == nil then break end
+                    table.insert(chunks, chunk)
+                end
+            end
+            local body = table.concat(chunks)
+            table.insert(_G.__direct_requests, {
+                method = req.method,
+                url = req.url,
+                headers = req.headers,
+                body = body,
+            })
+
+            local response = "OK"
+            if req.url:find("rpcids=wXbhsf", 1, true) then
+                response = read_fixture("notebook_list_response.fixture")
+            elseif req.url:find("rpcids=rLM1Ne", 1, true) then
+                response = read_fixture("get_notebook_response.fixture")
+            elseif req.url:find("GenerateFreeFormStreamed", 1, true) then
+                response = read_fixture("query_response.fixture")
+            end
+            if req.sink then
+                req.sink(response)
+            end
+            return true, 200, {}, "OK"
+        end,
+    }
+end
+
 preload["ltn12"] = function()
     return {
         sink = {
@@ -516,6 +559,23 @@ def main() -> None:
         assert(direct_client:build_get_notebook(auth, "nb-golden").url:find("source%-path=%%2Fnotebook%%2Fnb%-golden"), "direct client did not build get notebook URL")
         assert(direct_client:build_ask(auth, { source_ids = { "src-golden" }, prompt = "Prompt?", conversation_id = "conv-golden" }).url:find("GenerateFreeFormStreamed", 1, true), "direct client did not build ask URL")
         assert(direct_client:parse_ask(read_fixture("query_response.fixture")).answer:find("Golden answer", 1, true), "direct client did not parse ask response")
+        local live_notebooks = assert(direct_client:list_notebooks())
+        assert(live_notebooks.adapter == "lua-direct" and live_notebooks.notebooks[1].id == "nb-golden", "direct client list_notebooks did not use Lua HTTPS transport")
+        local first_direct_request = _G.__direct_requests[1]
+        assert(first_direct_request.headers["Cookie"]:find("SID=fake", 1, true), "direct transport did not send cookie header")
+        assert(first_direct_request.headers["X-Goog-Csrf-Token"] == "csrf-token", "direct transport did not send csrf header")
+        assert(first_direct_request.headers["X-Same-Domain"] == "1", "direct transport did not send same-domain header")
+        assert(first_direct_request.headers["Content-Type"] == "application/x-www-form-urlencoded;charset=UTF-8", "direct transport content type changed")
+        assert(first_direct_request.body:find("f.req=", 1, true), "direct transport did not send form body")
+        local live_notebook = assert(direct_client:get_notebook("nb-golden"))
+        assert(live_notebook.sources[1].id == "src-golden", "direct client get_notebook did not parse sources")
+        local live_answer = assert(direct_client:ask({
+            notebook_id = "nb-golden",
+            selected_text = "Lua direct selected text",
+            prompt = "Explain this.",
+            book = { title = "Fixture Book", position = "smoke" },
+        }))
+        assert(live_answer.adapter == "lua-direct" and live_answer.answer:find("Golden answer", 1, true), "direct client ask did not parse answer")
         '''
     )
     plugin = lua.execute(f'return dofile("{PLUGIN_DIR / "main.lua"}")')
@@ -573,21 +633,51 @@ def main() -> None:
         assert(menu.notebooklm.sub_item_table[2].text == "Answers", "missing NotebookLM answers menu")
         local settings_menu = menu.notebooklm.sub_item_table[5]
         assert(settings_menu and settings_menu.text == "Settings", "missing NotebookLM settings menu")
-        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 3, "settings menu does not expose expected settings")
-        assert(settings_menu.sub_item_table[1].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
+        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 7, "settings menu does not expose expected settings")
+        assert(settings_menu.sub_item_table[1].text_func():find("bridge", 1, true), "backend menu did not show bridge default")
         settings_menu.sub_item_table[1].callback()
+        assert(plugin.settings:read("backend") == "lua-direct", "backend toggle did not switch to lua-direct")
+        settings_menu.sub_item_table[1].callback()
+        assert(plugin.settings:read("backend") == "bridge", "backend toggle did not switch back to bridge")
+        assert(settings_menu.sub_item_table[2].text_func():find("not set", 1, true), "lua direct auth bundle menu did not show unset state")
+        settings_menu.sub_item_table[2].callback()
+        assert(plugin.notebooklm_ui.input_dialog == nil, "lua direct auth bundle menu should not use NotebookLMUI input dialog")
+        local uimanager_for_lua_direct = require("ui/uimanager")
+        local auth_dialog = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
+        assert(auth_dialog and auth_dialog.title == "Lua direct auth bundle", "lua direct auth bundle dialog did not render")
+        auth_dialog.input = "/tmp/notebooklm-direct-auth-bundle.json"
+        auth_dialog.buttons[1][2].callback()
+        assert(plugin.settings:read("direct_auth_bundle_path") == "/tmp/notebooklm-direct-auth-bundle.json", "lua direct auth bundle path was not saved")
+        assert(settings_menu.sub_item_table[3].text_func():find("auto", 1, true), "lua direct notebook menu did not show auto state")
+        settings_menu.sub_item_table[3].callback()
+        local notebook_dialog = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
+        assert(notebook_dialog and notebook_dialog.title == "Lua direct notebook ID", "lua direct notebook dialog did not render")
+        notebook_dialog.input = "nb-golden"
+        notebook_dialog.buttons[1][2].callback()
+        assert(plugin.settings:read("direct_notebook_id") == "nb-golden", "lua direct notebook id was not saved")
+        settings_menu.sub_item_table[4].callback()
+        local smoke_error = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
+        assert(smoke_error and smoke_error.text and smoke_error.text:find("Set NotebookLM backend", 1, true), "lua direct smoke should require lua-direct backend")
+        settings_menu.sub_item_table[1].callback()
+        settings_menu.sub_item_table[4].callback()
+        local smoke_result = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
+        assert(smoke_result and smoke_result.text and smoke_result.text:find("Lua direct smoke OK", 1, true), "lua direct smoke did not complete through HTTPS stub")
+        settings_menu.sub_item_table[1].callback()
+        assert(plugin.settings:read("backend") == "bridge", "backend was not restored after lua-direct smoke")
+        assert(settings_menu.sub_item_table[5].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
+        settings_menu.sub_item_table[5].callback()
         assert(plugin.settings:read("enable_upload") == false, "source upload toggle did not disable upload")
-        settings_menu.sub_item_table[1].callback()
+        settings_menu.sub_item_table[5].callback()
         assert(plugin.settings:read("enable_upload") == true, "source upload toggle did not re-enable upload")
-        assert(settings_menu.sub_item_table[2].text_func():find("multipart", 1, true), "upload mode menu did not show multipart mode")
-        settings_menu.sub_item_table[2].callback()
+        assert(settings_menu.sub_item_table[6].text_func():find("multipart", 1, true), "upload mode menu did not show multipart mode")
+        settings_menu.sub_item_table[6].callback()
         assert(plugin.settings:read("upload_mode") == "path", "upload mode toggle did not switch to path")
-        settings_menu.sub_item_table[2].callback()
+        settings_menu.sub_item_table[6].callback()
         assert(plugin.settings:read("upload_mode") == "multipart", "upload mode toggle did not switch back to multipart")
-        assert(settings_menu.sub_item_table[3].text_func():find("enabled", 1, true), "open answer setting did not show enabled state")
-        settings_menu.sub_item_table[3].callback()
+        assert(settings_menu.sub_item_table[7].text_func():find("enabled", 1, true), "open answer setting did not show enabled state")
+        settings_menu.sub_item_table[7].callback()
         assert(plugin.settings:read("open_answer_automatically") == false, "open answer toggle did not disable auto-open")
-        settings_menu.sub_item_table[3].callback()
+        settings_menu.sub_item_table[7].callback()
         assert(plugin.settings:read("open_answer_automatically") == true, "open answer toggle did not re-enable auto-open")
 
         local unsafe_value = function() return "unsafe" end

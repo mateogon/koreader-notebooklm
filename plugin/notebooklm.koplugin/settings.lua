@@ -6,6 +6,7 @@ local Settings = {
     defaults = {
         backend = "bridge",
         direct_auth_bundle_path = "",
+        direct_notebook_id = "",
         bridge_url = "http://127.0.0.1:8765",
         timeout = 120,
         enable_upload = true,
@@ -34,6 +35,7 @@ function Settings:asTable()
     return {
         backend = self:read("backend"),
         direct_auth_bundle_path = self:read("direct_auth_bundle_path"),
+        direct_notebook_id = self:read("direct_notebook_id"),
         bridge_url = self:read("bridge_url"),
         timeout = self:read("timeout"),
         enable_upload = self:read("enable_upload"),

@@ -117,6 +117,44 @@ function NotebookLM:addToMainMenu(menu_items)
                 sub_item_table = {
                     {
                         text_func = function()
+                            return _("Backend: ") .. tostring(self.settings:read("backend"))
+                        end,
+                        callback = function()
+                            self:toggleBackend()
+                        end,
+                    },
+                    {
+                        text_func = function()
+                            local path = tostring(self.settings:read("direct_auth_bundle_path") or "")
+                            if path == "" then
+                                path = _("not set")
+                            end
+                            return _("Lua direct auth bundle: ") .. path
+                        end,
+                        callback = function()
+                            self:showLuaDirectAuthBundleDialog()
+                        end,
+                    },
+                    {
+                        text_func = function()
+                            local notebook_id = tostring(self.settings:read("direct_notebook_id") or "")
+                            if notebook_id == "" then
+                                notebook_id = _("auto")
+                            end
+                            return _("Lua direct notebook: ") .. notebook_id
+                        end,
+                        callback = function()
+                            self:showLuaDirectNotebookDialog()
+                        end,
+                    },
+                    {
+                        text = _("Lua direct smoke"),
+                        callback = function()
+                            self:runLuaDirectSmoke()
+                        end,
+                    },
+                    {
+                        text_func = function()
                             return _("Source upload: ") .. enabled_label(self.settings:read("enable_upload"))
                         end,
                         callback = function()
@@ -175,6 +213,165 @@ function NotebookLM:showBridgeUrlDialog()
         },
     }
     UIManager:show(input_dialog)
+end
+
+local function show_notice(text, timeout)
+    local InfoMessage = require("ui/widget/infomessage")
+    UIManager:show(InfoMessage:new{
+        icon = "notice-info",
+        text = tostring(text),
+        timeout = timeout or 5,
+    })
+end
+
+local function show_error(text)
+    local InfoMessage = require("ui/widget/infomessage")
+    UIManager:show(InfoMessage:new{
+        icon = "notice-warning",
+        text = tostring(text),
+        timeout = 8,
+    })
+end
+
+function NotebookLM:showLuaDirectAuthBundleDialog()
+    local InputDialog = require("ui/widget/inputdialog")
+    local input_dialog
+    input_dialog = InputDialog:new{
+        title = _("Lua direct auth bundle"),
+        input_hint = _("/path/to/auth-bundle.json"),
+        input_type = "text",
+        input = self.settings:read("direct_auth_bundle_path"),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(input_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    callback = function()
+                        self.settings:write("direct_auth_bundle_path", input_dialog:getInputText() or "")
+                        UIManager:close(input_dialog)
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(input_dialog)
+end
+
+function NotebookLM:showLuaDirectNotebookDialog()
+    local InputDialog = require("ui/widget/inputdialog")
+    local input_dialog
+    input_dialog = InputDialog:new{
+        title = _("Lua direct notebook ID"),
+        input_hint = _("Notebook ID, or blank for linked/first notebook"),
+        input_type = "text",
+        input = self.settings:read("direct_notebook_id"),
+        buttons = {
+            {
+                {
+                    text = _("Cancel"),
+                    callback = function()
+                        UIManager:close(input_dialog)
+                    end,
+                },
+                {
+                    text = _("Save"),
+                    callback = function()
+                        self.settings:write("direct_notebook_id", input_dialog:getInputText() or "")
+                        UIManager:close(input_dialog)
+                    end,
+                },
+            },
+        },
+    }
+    UIManager:show(input_dialog)
+end
+
+function NotebookLM:toggleBackend()
+    local current = self.settings:read("backend")
+    local next_backend = current == "lua-direct" and "bridge" or "lua-direct"
+    self.settings:write("backend", next_backend)
+    show_notice("NotebookLM backend: " .. next_backend)
+end
+
+function NotebookLM:runLuaDirectSmoke()
+    if self.settings:read("backend") ~= "lua-direct" then
+        show_error("Set NotebookLM backend to lua-direct before running this smoke.")
+        return
+    end
+
+    local ok_client, DirectClient = pcall(function()
+        return require("direct.client")
+    end)
+    if not ok_client then
+        show_error("Could not load Lua direct client: " .. tostring(DirectClient))
+        return
+    end
+
+    show_notice("NotebookLM Lua direct smoke started.", 2)
+    local direct = DirectClient:new(self.settings)
+    local notebooks, list_err = direct:list_notebooks()
+    if not notebooks then
+        show_error("Lua direct list_notebooks failed: " .. tostring(list_err))
+        return
+    end
+
+    local link = self.storage and self.storage:get_link(self.ui) or nil
+    local notebook_id = self.settings:read("direct_notebook_id")
+    if not notebook_id or notebook_id == "" then
+        notebook_id = link and link.notebook_id or nil
+    end
+    if (not notebook_id or notebook_id == "") and notebooks.notebooks and notebooks.notebooks[1] then
+        notebook_id = notebooks.notebooks[1].id
+    end
+    if not notebook_id or notebook_id == "" then
+        show_error("Lua direct smoke found no NotebookLM notebook.")
+        return
+    end
+
+    local notebook, notebook_err = direct:get_notebook(notebook_id)
+    if not notebook then
+        show_error("Lua direct get_notebook failed: " .. tostring(notebook_err))
+        return
+    end
+
+    local book = self.storage:get_book_context(self.ui)
+    local answer, ask_err = direct:ask{
+        notebook_id = notebook_id,
+        selected_text = "KOReader NotebookLM Lua direct smoke.",
+        prompt = "Reply with one short sentence about this phrase.",
+        book = {
+            title = book.title,
+            author = book.author,
+            position = book.position,
+        },
+    }
+    if not answer then
+        show_error("Lua direct ask failed: " .. tostring(ask_err))
+        return
+    end
+
+    local ConfirmBox = require("ui/widget/confirmbox")
+    local Font = require("ui/font")
+    UIManager:show(ConfirmBox:new{
+        icon = "notice-info",
+        face = Font:getFace("smallinfofont"),
+        text = table.concat({
+            "NotebookLM Lua direct smoke OK",
+            "",
+            "Notebooks: " .. tostring(#(notebooks.notebooks or {})),
+            "Notebook ID: " .. tostring(notebook_id),
+            "Sources: " .. tostring(#(notebook.sources or {})),
+            "Conversation ID: " .. tostring(answer.conversation_id or ""),
+            "",
+            tostring(answer.answer or ""):sub(1, 900),
+        }, "\n"),
+        ok_text = _("Close"),
+    })
 end
 
 function NotebookLM:toggleSourceUpload()
