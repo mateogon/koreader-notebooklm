@@ -361,6 +361,10 @@ end
 
 def main() -> None:
     Path("/tmp/book.epub").write_bytes(b"stub epub")
+    Path("/tmp/notebooklm-direct-auth-bundle.json").write_text(
+        '{"base_url":"https://notebooklm.google.com","cookies":{"SID":"fake"},"csrf_token":"csrf-token","session_id":"session-id","build_label":"build-label"}',
+        encoding="utf-8",
+    )
     Path("/tmp/notebooklm-last-answer.md").unlink(missing_ok=True)
     for answer_file in Path("/tmp").glob("notebooklm-answer-*.md"):
         answer_file.unlink(missing_ok=True)
@@ -368,6 +372,152 @@ def main() -> None:
     lua = LuaRuntime(unpack_returned_tuples=True)
     lua.execute(f'package.path = "{PLUGIN_DIR}/?.lua;" .. package.path')
     lua.execute(STUBS)
+    lua.globals().nlm_lite_fixture_dir = str(ROOT / "bridge" / "tests" / "fixtures" / "nlm_lite")
+    lua.execute(
+        r'''
+        local Json = require("direct.codec")
+        local Rpc = require("direct.rpc")
+        local Parsing = require("direct.parsing")
+        local AuthBundle = require("direct.auth_bundle")
+        local DirectClient = require("direct.client")
+
+        local function read_fixture(name)
+            local path = nlm_lite_fixture_dir .. "/" .. name
+            local file = assert(io.open(path, "r"), "missing fixture: " .. path)
+            local body = file:read("*all")
+            file:close()
+            return body
+        end
+
+        local function url_decode(value)
+            value = tostring(value or ""):gsub("+", " ")
+            return (value:gsub("%%(%x%x)", function(hex)
+                return string.char(tonumber(hex, 16))
+            end))
+        end
+
+        local function form_values(body)
+            local values = {}
+            for key, value in tostring(body):gmatch("([^=&]+)=([^&]*)&?") do
+                values[url_decode(key)] = url_decode(value)
+            end
+            return values
+        end
+
+        local function decode_rpc_body(body)
+            local values = form_values(body)
+            local f_req = Json.decode(values["f.req"])
+            local call = f_req[1][1]
+            return call[1], Json.decode(call[2]), call[3], call[4], values
+        end
+
+        local auth = assert(AuthBundle.load("/tmp/notebooklm-direct-auth-bundle.json"))
+        assert(auth.base_url == "https://notebooklm.google.com", "auth bundle base_url did not load")
+        assert(auth.csrf_token == "csrf-token", "auth bundle csrf_token did not load")
+
+        local rpc_id, params, null_value, mode, values = decode_rpc_body(
+            Rpc.build_batchexecute_body(Rpc.RPC_LIST_NOTEBOOKS, Rpc.params_list_notebooks(), "csrf-token")
+        )
+        assert(rpc_id == Rpc.RPC_LIST_NOTEBOOKS, "list notebooks rpc id changed")
+        assert(params[1] == Json.null and params[2] == 1 and params[3] == Json.null and params[4][1] == 2, "list notebooks params changed")
+        assert(null_value == Json.null, "batchexecute placeholder was not null")
+        assert(mode == "generic", "batchexecute mode changed")
+        assert(values["at"] == "csrf-token", "csrf token was not encoded in batchexecute body")
+        local list_url = Rpc.build_batchexecute_url("https://notebooklm.google.com", Rpc.RPC_LIST_NOTEBOOKS, {
+            build_label = "build-label",
+            session_id = "session-id",
+        })
+        assert(list_url:find("/_/LabsTailwindUi/data/batchexecute?", 1, true), "batchexecute URL path changed")
+        assert(list_url:find("rpcids=wXbhsf", 1, true), "batchexecute URL missing list rpc id")
+        assert(list_url:find("source%-path=%%2F"), "batchexecute URL missing escaped root source path")
+        assert(list_url:find("bl=build%-label"), "batchexecute URL missing build label")
+        assert(list_url:find("f%.sid=session%-id"), "batchexecute URL missing session id")
+
+        rpc_id, params = decode_rpc_body(
+            Rpc.build_batchexecute_body(Rpc.RPC_GET_NOTEBOOK, Rpc.params_get_notebook("nb-golden"), "csrf-token")
+        )
+        assert(rpc_id == Rpc.RPC_GET_NOTEBOOK, "get notebook rpc id changed")
+        assert(params[1] == "nb-golden" and params[2] == Json.null and params[3][1] == 2 and params[4] == Json.null and params[5] == 0, "get notebook params changed")
+
+        rpc_id, params = decode_rpc_body(
+            Rpc.build_batchexecute_body(Rpc.RPC_CREATE_NOTEBOOK, Rpc.params_create_notebook("Golden Notebook"), "csrf-token")
+        )
+        assert(rpc_id == Rpc.RPC_CREATE_NOTEBOOK, "create notebook rpc id changed")
+        assert(params[1] == "Golden Notebook" and params[4][1] == 2 and params[5][1] == 1 and params[5][11][1] == 1, "create notebook params changed")
+
+        rpc_id, params = decode_rpc_body(
+            Rpc.build_batchexecute_body(Rpc.RPC_ADD_SOURCE_FILE, Rpc.params_register_file_source("nb-golden", "Golden Source.pdf"), "csrf-token")
+        )
+        assert(rpc_id == Rpc.RPC_ADD_SOURCE_FILE, "register source rpc id changed")
+        assert(params[1][1][1] == "Golden Source.pdf" and params[2] == "nb-golden" and params[3][1] == 2, "register source params changed")
+
+        local query_body = Rpc.build_query_body({
+            source_ids = { "src-golden" },
+            query_text = "Why does this matter?",
+            conversation_id = "conv-golden",
+            conversation_history = Json.array(
+                Json.array("Earlier answer.", Json.null, 2),
+                Json.array("Earlier question?", Json.null, 1)
+            ),
+            csrf_token = "csrf-token",
+        })
+        values = form_values(query_body)
+        local query_f_req = Json.decode(values["f.req"])
+        local query_params = Json.decode(query_f_req[2])
+        assert(query_f_req[1] == Json.null, "query f.req first slot changed")
+        assert(query_params[1][1][1][1] == "src-golden", "query source shape changed")
+        assert(query_params[2] == "Why does this matter?", "query text changed")
+        assert(query_params[3][1][1] == "Earlier answer.", "query history answer shape changed")
+        assert(query_params[3][2][3] == 1, "query history question role changed")
+        assert(query_params[4][1] == 2 and query_params[4][2] == Json.null and query_params[4][3][1] == 1, "query mode shape changed")
+        assert(query_params[5] == "conv-golden", "query conversation id changed")
+        assert(values["at"] == "csrf-token", "csrf token was not encoded in query body")
+        local query_url = Rpc.build_query_url("https://notebooklm.google.com", {
+            build_label = "build-label",
+            session_id = "session-id",
+            request_id = 123456,
+        })
+        assert(query_url:find("GenerateFreeFormStreamed", 1, true), "query URL endpoint changed")
+        assert(query_url:find("_reqid=123456", 1, true), "query URL missing request id")
+        assert(query_url:find("bl=build%-label"), "query URL missing build label")
+        assert(query_url:find("f%.sid=session%-id"), "query URL missing session id")
+
+        local list_result = assert(Parsing.parse_batchexecute_response(
+            read_fixture("notebook_list_response.fixture"),
+            Rpc.RPC_LIST_NOTEBOOKS
+        ))
+        local notebooks = Parsing.parse_notebooks(list_result)
+        assert(#notebooks == 1 and notebooks[1].id == "nb-golden", "notebook list fixture did not parse")
+        assert(notebooks[1].sources[1].id == "src-golden" and notebooks[1].sources[1].status == "ready", "notebook source fixture did not parse")
+
+        local notebook_result = assert(Parsing.parse_batchexecute_response(
+            read_fixture("get_notebook_response.fixture"),
+            Rpc.RPC_GET_NOTEBOOK
+        ))
+        local sources = Parsing.parse_sources_from_notebook_data(notebook_result)
+        assert(#sources == 1 and sources[1].title == "Golden Source", "get notebook fixture did not parse")
+
+        local answer = assert(Parsing.parse_query_response(read_fixture("query_response.fixture")))
+        assert(answer.answer == "Golden answer with citation [1].", "query answer fixture did not parse")
+        assert(answer.conversation_id == "conv-golden", "query conversation id did not parse")
+        assert(answer.citations["1"] == "src-golden", "query citation mapping did not parse")
+        assert(answer.references[1].cited_text == "Golden cited passage.", "query cited text did not parse")
+
+        local fake_settings = {
+            values = { backend = "bridge", direct_auth_bundle_path = "/tmp/notebooklm-direct-auth-bundle.json" },
+            read = function(self, key) return self.values[key] end,
+        }
+        local direct_client = DirectClient:new(fake_settings, nil)
+        assert(direct_client:is_enabled() == false, "Lua direct client should not be enabled by default")
+        fake_settings.values.backend = "lua-direct"
+        assert(direct_client:is_enabled() == true, "Lua direct client feature flag did not enable")
+        assert(direct_client:load_auth().csrf_token == "csrf-token", "direct client did not load auth")
+        assert(direct_client:build_list_notebooks(auth).body:find("wXbhsf", 1, true), "direct client did not build list request")
+        assert(direct_client:build_get_notebook(auth, "nb-golden").url:find("source%-path=%%2Fnotebook%%2Fnb%-golden"), "direct client did not build get notebook URL")
+        assert(direct_client:build_ask(auth, { source_ids = { "src-golden" }, prompt = "Prompt?", conversation_id = "conv-golden" }).url:find("GenerateFreeFormStreamed", 1, true), "direct client did not build ask URL")
+        assert(direct_client:parse_ask(read_fixture("query_response.fixture")).answer:find("Golden answer", 1, true), "direct client did not parse ask response")
+        '''
+    )
     plugin = lua.execute(f'return dofile("{PLUGIN_DIR / "main.lua"}")')
 
     lua.globals().plugin = plugin

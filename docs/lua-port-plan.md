@@ -151,9 +151,12 @@ Termux, or direct NotebookLM Lua.
 ## Port Order
 
 1. Keep Python `nlm-lite` green and fixture-tested.
-2. Add Lua auth bundle reader with no network calls.
+2. Add Lua auth bundle reader with no network calls. Current spike: done in
+   `plugin/notebooklm.koplugin/direct/auth_bundle.lua`.
 3. Port RPC body/URL builders and compare against golden request shapes.
-4. Port response parsers and compare against sanitized fixtures.
+   Current spike: fixture-verified in `direct/rpc.lua`.
+4. Port response parsers and compare against sanitized fixtures. Current spike:
+   fixture-verified in `direct/parsing.lua`.
 5. Implement list/get notebook over HTTP.
 6. Implement ask over HTTP with one conversation ID.
 7. Add conversation history cache.
@@ -181,3 +184,42 @@ KOREADER_NOTEBOOKLM_BRIDGE_URL=http://127.0.0.1:8766 ../scripts/smoke-koreader-b
 
 The golden tests are intentionally sanitized. If NotebookLM changes the private
 protocol, update Python first, then update fixtures, then port Lua.
+
+## Current Lua Direct Spike
+
+The first isolated Lua core lives under:
+
+```text
+plugin/notebooklm.koplugin/direct/
+```
+
+It includes:
+
+- `codec.lua`: small JSON codec used by this spike so `null` positions are
+  preserved in private NotebookLM request arrays.
+- `auth_bundle.lua`: external auth bundle loader and validator.
+- `rpc.lua`: private RPC constants and request builders.
+- `parsing.lua`: sanitized batchexecute/query response parsing.
+- `client.lua`: minimal feature-flagged facade for request building and fixture
+  parsing.
+
+The bridge UX remains the default. The direct client reports enabled only when
+settings contain:
+
+```text
+backend = lua-direct
+```
+
+This spike intentionally does not perform live NotebookLM HTTPS requests from
+KOReader yet. It also does not implement Lua upload, Lua browser login, auth
+export, or source creation as a user-facing feature.
+
+Run the Lua spike tests through the existing verifier:
+
+```sh
+cd bridge
+uv run --extra dev python ../scripts/verify-plugin-lua.py
+```
+
+The verifier checks the Lua request builders against the same sanitized golden
+fixtures used by Python tests.
