@@ -425,7 +425,9 @@ def main() -> None:
         assert(plugin.notebooklm_ui.input_dialog.buttons[2][1].text == "NotebookLM answers", "submenu missing answers action")
         plugin.notebooklm_ui.input_dialog.buttons[1][1].callback()
         assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "unlinked ask did not open setup")
-        assert(plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Skip", "setup does not expose a skip action")
+        assert(plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Back", "setup does not expose a back action when opened from the NotebookLM hub")
+        plugin.notebooklm_ui.input_dialog.buttons[1][1].callback()
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Ask NotebookLM", "setup back did not return to the NotebookLM hub")
         plugin.notebooklm_ui:_close_input()
 
         plugin.notebooklm_ui:show_status()
@@ -486,6 +488,11 @@ def main() -> None:
         prompt_hub.buttons[1][1].callback()
         local prompt_picker = plugin.notebooklm_ui.input_dialog
         assert(prompt_picker and prompt_picker.title:find("Ask NotebookLM", 1, true), "ask action did not open prompt picker")
+        assert(prompt_picker.buttons[6][2].text == "Back", "prompt picker did not expose back navigation")
+        prompt_picker.buttons[6][2].callback()
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Ask NotebookLM", "prompt back did not return to the NotebookLM hub")
+        plugin.notebooklm_ui.input_dialog.buttons[1][1].callback()
+        prompt_picker = plugin.notebooklm_ui.input_dialog
         prompt_picker.buttons[1][1].callback()
         local prompt_payload = _G.__last_encoded_value
         assert(prompt_payload and prompt_payload.selected_text == "Prompt button selected text", "highlight prompt selected text was not sent")
@@ -524,6 +531,15 @@ def main() -> None:
         assert(answers_dialog.buttons[1][1].text:find("Explica simple", 1, true), "answers list did not show question context first")
         answers_dialog.buttons[1][1].callback()
         assert(viewer.last_opened and viewer.last_opened:find("/tmp/notebooklm%-answer%-"), "saved answer did not reopen")
+        plugin.notebooklm_ui:show_answers(function()
+            plugin.notebooklm_ui:show_highlight_menu("History highlighted passage")
+        end)
+        local answers_back_dialog = plugin.notebooklm_ui.input_dialog
+        local answers_last_row = answers_back_dialog.buttons[#answers_back_dialog.buttons]
+        assert(answers_last_row and answers_last_row[1].text == "Back", "answers list did not expose back navigation")
+        answers_last_row[1].callback()
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Ask NotebookLM", "answers back did not return to the NotebookLM hub")
+        plugin.notebooklm_ui:_close_input()
 
         plugin.notebooklm_ui:show_custom_question("Custom highlighted passage")
         local custom_dialog = plugin.notebooklm_ui.input_dialog

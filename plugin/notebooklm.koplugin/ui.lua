@@ -214,7 +214,7 @@ function NotebookLMUI:show_status()
     })
 end
 
-function NotebookLMUI:show_setup(on_ready)
+function NotebookLMUI:show_setup(on_ready, on_back)
     local book = self:_book()
     local link = self:_sync_bridge_link()
     local link_text = link and link.notebook_id
@@ -226,7 +226,7 @@ function NotebookLMUI:show_setup(on_ready)
             callback = function()
                 local filter = self.input_dialog:getInputText()
                 self:_close_input()
-                self:show_notebook_picker(filter, on_ready)
+                self:show_notebook_picker(filter, on_ready, on_back)
             end,
         },
         {
@@ -234,7 +234,7 @@ function NotebookLMUI:show_setup(on_ready)
             callback = function()
                 local title = self.input_dialog:getInputText()
                 self:_close_input()
-                self:create_notebook(title, false, on_ready)
+                self:create_notebook(title, false, on_ready, on_back)
             end,
         },
     }
@@ -244,16 +244,19 @@ function NotebookLMUI:show_setup(on_ready)
             callback = function()
                 local title = self.input_dialog:getInputText()
                 self:_close_input()
-                self:create_notebook(title, true, on_ready)
+                self:create_notebook(title, true, on_ready, on_back)
             end,
         })
     end
     local buttons = {
         {
             {
-                text = _("Skip"),
+                text = on_back and _("Back") or _("Skip"),
                 callback = function()
                     self:_close_input()
+                    if on_back then
+                        on_back()
+                    end
                 end,
             },
             {
@@ -273,6 +276,8 @@ function NotebookLMUI:show_setup(on_ready)
                     self:_show_info("Book linked to NotebookLM.")
                     if on_ready then
                         on_ready(saved)
+                    elseif on_back then
+                        on_back()
                     end
                 end,
             },
@@ -287,7 +292,7 @@ function NotebookLMUI:show_setup(on_ready)
                     self:_close_input()
                     self:_clear_link()
                     self:_show_info("NotebookLM link cleared.")
-                    self:show_setup(on_ready)
+                    self:show_setup(on_ready, on_back)
                 end,
             },
             {
@@ -313,7 +318,7 @@ function NotebookLMUI:show_setup(on_ready)
     UIManager:show(self.input_dialog)
 end
 
-function NotebookLMUI:show_notebook_picker(filter, on_ready)
+function NotebookLMUI:show_notebook_picker(filter, on_ready, on_back)
     local result, err = self.client:list_notebooks()
     if err then
         self:_show_error(err)
@@ -343,6 +348,8 @@ function NotebookLMUI:show_notebook_picker(filter, on_ready)
                     self:_show_info("Book linked to NotebookLM.")
                     if on_ready then
                         on_ready(saved)
+                    elseif on_back then
+                        on_back()
                     end
                 end,
             })
@@ -361,7 +368,7 @@ function NotebookLMUI:show_notebook_picker(filter, on_ready)
             text = _("Back"),
             callback = function()
                 self:_close_input()
-                self:show_setup(on_ready)
+                self:show_setup(on_ready, on_back)
             end,
         },
         {
@@ -384,7 +391,7 @@ function NotebookLMUI:show_notebook_picker(filter, on_ready)
     UIManager:show(self.input_dialog)
 end
 
-function NotebookLMUI:create_notebook(title, upload_after, on_ready)
+function NotebookLMUI:create_notebook(title, upload_after, on_ready, on_back)
     local book = self:_book()
     title = title and title ~= "" and title or ("KOReader - " .. tostring(book.title or "Untitled book"))
 
@@ -430,6 +437,8 @@ function NotebookLMUI:create_notebook(title, upload_after, on_ready)
     self:_show_info(upload_after and "Notebook created, source uploaded, and book linked." or "Notebook created and book linked.")
     if on_ready then
         on_ready(saved)
+    elseif on_back then
+        on_back()
     end
 end
 
@@ -443,6 +452,9 @@ function NotebookLMUI:show_highlight_menu(highlighted_text)
         and ("Notebook: " .. tostring(link.notebook_title or link.notebook_id))
         or "Notebook: not linked"
     local setup_text = link and link.notebook_id and _("Relink notebook") or _("Link notebook")
+    local function back_to_hub()
+        self:show_highlight_menu(highlighted_text)
+    end
 
     self.input_dialog = ButtonDialog:new{
         title = table.concat({
@@ -456,7 +468,7 @@ function NotebookLMUI:show_highlight_menu(highlighted_text)
                     text = _("Ask NotebookLM"),
                     callback = function()
                         self:_close_input()
-                        self:ask_highlight(highlighted_text)
+                        self:ask_highlight(highlighted_text, back_to_hub)
                     end,
                 },
             },
@@ -465,7 +477,7 @@ function NotebookLMUI:show_highlight_menu(highlighted_text)
                     text = _("NotebookLM answers"),
                     callback = function()
                         self:_close_input()
-                        self:show_answers()
+                        self:show_answers(back_to_hub)
                     end,
                 },
             },
@@ -474,7 +486,7 @@ function NotebookLMUI:show_highlight_menu(highlighted_text)
                     text = setup_text,
                     callback = function()
                         self:_close_input()
-                        self:show_setup()
+                        self:show_setup(nil, back_to_hub)
                     end,
                 },
                 {
@@ -498,7 +510,7 @@ function NotebookLMUI:show_highlight_menu(highlighted_text)
     UIManager:show(self.input_dialog)
 end
 
-function NotebookLMUI:ask_highlight(highlighted_text)
+function NotebookLMUI:ask_highlight(highlighted_text, on_back)
     if not highlighted_text or highlighted_text == "" then
         self:_show_error("No highlighted text found.")
         return
@@ -506,14 +518,14 @@ function NotebookLMUI:ask_highlight(highlighted_text)
     local link = self:_sync_bridge_link()
     if not link or not link.notebook_id then
         self:show_setup(function()
-            self:show_prompt_picker(highlighted_text)
-        end)
+            self:show_prompt_picker(highlighted_text, on_back)
+        end, on_back)
         return
     end
-    self:show_prompt_picker(highlighted_text)
+    self:show_prompt_picker(highlighted_text, on_back)
 end
 
-function NotebookLMUI:ask_with_prompt(highlighted_text, prompt, prompt_label)
+function NotebookLMUI:ask_with_prompt(highlighted_text, prompt, prompt_label, on_back)
     if not highlighted_text or highlighted_text == "" then
         self:_show_error("No highlighted text found.")
         return
@@ -522,16 +534,19 @@ function NotebookLMUI:ask_with_prompt(highlighted_text, prompt, prompt_label)
     if not link or not link.notebook_id then
         self:show_setup(function()
             self:send_ask(highlighted_text, prompt, prompt_label)
-        end)
+        end, on_back)
         return
     end
     self:send_ask(highlighted_text, prompt, prompt_label)
 end
 
-function NotebookLMUI:show_answers()
+function NotebookLMUI:show_answers(on_back)
     local answers = self:_read_answers()
     if #answers == 0 then
         self:_show_info("No NotebookLM answers saved yet.")
+        if on_back then
+            on_back()
+        end
         return
     end
 
@@ -556,14 +571,32 @@ function NotebookLMUI:show_answers()
             },
         })
     end
-    table.insert(rows, {
-        {
-            text = _("Close"),
-            callback = function()
-                self:_close_input()
-            end,
-        },
-    })
+    if on_back then
+        table.insert(rows, {
+            {
+                text = _("Back"),
+                callback = function()
+                    self:_close_input()
+                    on_back()
+                end,
+            },
+            {
+                text = _("Close"),
+                callback = function()
+                    self:_close_input()
+                end,
+            },
+        })
+    else
+        table.insert(rows, {
+            {
+                text = _("Close"),
+                callback = function()
+                    self:_close_input()
+                end,
+            },
+        })
+    end
 
     self.input_dialog = ButtonDialog:new{
         title = _("NotebookLM answers") .. "\n" .. _("Most recent first"),
@@ -573,7 +606,7 @@ function NotebookLMUI:show_answers()
     UIManager:show(self.input_dialog)
 end
 
-function NotebookLMUI:show_prompt_picker(highlighted_text)
+function NotebookLMUI:show_prompt_picker(highlighted_text, on_back)
     local rows = {}
     for _, prompt in ipairs(self.prompts.presets) do
         table.insert(rows, {
@@ -591,16 +624,31 @@ function NotebookLMUI:show_prompt_picker(highlighted_text)
             text = _("Custom"),
             callback = function()
                 self:_close_input()
-                self:show_custom_question(highlighted_text)
+                self:show_custom_question(highlighted_text, function()
+                    self:show_prompt_picker(highlighted_text, on_back)
+                end)
             end,
         },
         {
-            text = _("Cancel"),
+            text = on_back and _("Back") or _("Cancel"),
             callback = function()
                 self:_close_input()
+                if on_back then
+                    on_back()
+                end
             end,
         },
     })
+    if on_back then
+        table.insert(rows, {
+            {
+                text = _("Close"),
+                callback = function()
+                    self:_close_input()
+                end,
+            },
+        })
+    end
 
     self.input_dialog = ButtonDialog:new{
         title = _("Ask NotebookLM") .. "\n" .. ("Text: " .. shorten(highlighted_text, 90)),
@@ -610,7 +658,7 @@ function NotebookLMUI:show_prompt_picker(highlighted_text)
     UIManager:show(self.input_dialog)
 end
 
-function NotebookLMUI:show_custom_question(highlighted_text)
+function NotebookLMUI:show_custom_question(highlighted_text, on_back)
     self.input_dialog = InputDialog:new{
         title = _("Ask NotebookLM"),
         input_hint = _("Ask about the highlighted text..."),
@@ -621,9 +669,12 @@ function NotebookLMUI:show_custom_question(highlighted_text)
         buttons = {
             {
                 {
-                    text = _("Cancel"),
+                    text = on_back and _("Back") or _("Cancel"),
                     callback = function()
                         self:_close_input()
+                        if on_back then
+                            on_back()
+                        end
                     end,
                 },
                 {
