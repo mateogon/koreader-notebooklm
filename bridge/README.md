@@ -74,6 +74,17 @@ With the bridge running in experimental `nlm-lite` mode, run:
 ../scripts/smoke-nlm-lite.sh
 ```
 
+To simulate the KOReader bridge flow without opening KOReader, run:
+
+```bash
+KOREADER_NOTEBOOKLM_BRIDGE_URL=http://127.0.0.1:8766 \
+KOREADER_NOTEBOOKLM_SMOKE_FILE="/path/to/book-or-small-test-source.pdf" \
+../scripts/smoke-koreader-bridge-flow.sh
+```
+
+This creates a notebook, uploads a multipart source, links a smoke book mapping,
+submits an async ask job, and polls until the answer is ready.
+
 Endpoints:
 
 - `GET /health`
