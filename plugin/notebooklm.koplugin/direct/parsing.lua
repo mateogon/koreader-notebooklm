@@ -249,5 +249,6 @@ end
 Parsing.Json = Json
 Parsing.Rpc = Rpc
 Parsing.is_null = is_null
+Parsing.unwrap_first = unwrap_first
 
 return Parsing

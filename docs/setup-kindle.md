@@ -36,6 +36,35 @@ If working from a Kindle shell, use the on-device path:
 scripts/koreader-runtime-preflight.sh /mnt/us/koreader/plugins http://<mac-lan-ip>:8765
 ```
 
+## Lua Direct Auth Import
+
+Experimental `lua-direct` mode can read a portable auth bundle on the Kindle.
+Generate or reuse the bundle on the Mac, then copy it over SSH:
+
+```sh
+KOREADER_KINDLE_HOST=<kindle-ip> \
+KOREADER_NOTEBOOKLM_NLM_PROFILE=<profile> \
+scripts/import-auth-to-kindle.sh
+```
+
+To also write the KOReader plugin settings for `lua-direct`:
+
+```sh
+KOREADER_KINDLE_HOST=<kindle-ip> \
+KOREADER_NOTEBOOKLM_CONFIGURE_KINDLE=1 \
+KOREADER_NOTEBOOKLM_DIRECT_NOTEBOOK_ID=<notebook-id> \
+scripts/import-auth-to-kindle.sh
+```
+
+The remote bundle path defaults to:
+
+```text
+/mnt/us/koreader/settings/notebooklm-auth-bundle.json
+```
+
+Do not copy auth bundles, cookies, or KOReader settings containing auth paths
+into the repository.
+
 ## Bridge URL
 
 The Kindle cannot use `127.0.0.1` to reach a bridge running on the Mac. Use the
@@ -70,6 +99,8 @@ If that file is absent, search under `/mnt/us/koreader` for recent `.log` files.
 
 ## Current Limits
 
-- Real NotebookLM auth is still owned by the Mac bridge through `nlm`.
-- EPUB upload support must be validated against the active `nlm` adapter.
-- All-in-Kindle NotebookLM calls are intentionally not implemented yet.
+- Bridge mode still remains the most stable path for normal reading.
+- `lua-direct` is experimental and uses a copied auth bundle generated on
+  Mac/Windows.
+- Direct upload support depends on NotebookLM's private resumable upload
+  protocol and should be tested with small EPUB/PDF files first.

@@ -84,6 +84,22 @@ end
 preload["ui/uimanager"] = function()
     return {
         shown = {},
+        looper = {
+            add_callback = function(_, fn)
+                local co = coroutine.create(fn)
+                local ok, yielded = coroutine.resume(co)
+                assert(ok, yielded)
+                if coroutine.status(co) == "suspended" then
+                    local ok_resume, err = coroutine.resume(co, yielded)
+                    assert(ok_resume, err)
+                end
+            end,
+        },
+        initLooper = function(self)
+            return self.looper
+        end,
+        setInputTimeout = function() end,
+        resetInputTimeout = function() end,
         show = function(self, widget)
             table.insert(self.shown, widget)
         end,
@@ -119,6 +135,9 @@ preload["ui/widget/textviewer"] = function()
     end
     function TextViewer.openFile(path)
         package.loaded["ui/widget/textviewer"].last_opened = path
+    end
+    function TextViewer:onSwipe()
+        return "original-swipe"
     end
     return TextViewer
 end
@@ -235,6 +254,8 @@ end
 
 preload["ssl.https"] = function()
     _G.__direct_requests = {}
+    _G.__direct_upload_started = false
+    _G.__direct_upload_finalized = false
     local function read_fixture(name)
         local path = _G.nlm_lite_fixture_dir .. "/" .. name
         local file = assert(io.open(path, "r"), "missing fixture: " .. path)
@@ -264,7 +285,25 @@ preload["ssl.https"] = function()
             if req.url:find("rpcids=wXbhsf", 1, true) then
                 response = read_fixture("notebook_list_response.fixture")
             elseif req.url:find("rpcids=rLM1Ne", 1, true) then
-                response = read_fixture("get_notebook_response.fixture")
+                if _G.__direct_upload_finalized then
+                    response = ")]}'\n0\n[[\"wrb.fr\",\"rLM1Ne\",\"[[\\\"Direct Created\\\",[[[\\\"src-direct-upload\\\"],\\\"Direct Source\\\",null,[null,2]]],\\\"created-direct\\\"]]\",null,null,null]]"
+                else
+                    response = read_fixture("get_notebook_response.fixture")
+                end
+            elseif req.url:find("rpcids=CCqFvf", 1, true) then
+                response = ")]}'\n0\n[[\"wrb.fr\",\"CCqFvf\",\"[\\\"Direct Created\\\",null,\\\"created-direct\\\"]\",null,null,null]]"
+            elseif req.url:find("rpcids=o4cbdc", 1, true) then
+                response = ")]}'\n0\n[[\"wrb.fr\",\"o4cbdc\",\"[[[\\\"src-direct-upload\\\"]]]\",null,null,null]]"
+            elseif req.url:find("/upload/_/?authuser=0", 1, true) then
+                _G.__direct_upload_started = true
+                response = ""
+                if req.sink then
+                    req.sink(response)
+                end
+                return true, 200, { ["x-goog-upload-url"] = "https://upload.test/session" }, "OK"
+            elseif req.url == "https://upload.test/session" then
+                _G.__direct_upload_finalized = true
+                response = ""
             elseif req.url:find("GenerateFreeFormStreamed", 1, true) then
                 response = read_fixture("query_response.fixture")
             end
@@ -274,6 +313,50 @@ preload["ssl.https"] = function()
             return true, 200, {}, "OK"
         end,
     }
+end
+
+preload["turbo"] = function()
+    return { log = { categories = { success = true, warning = true } } }
+end
+
+preload["httpclient"] = function()
+    local function read_fixture(name)
+        local path = _G.nlm_lite_fixture_dir .. "/" .. name
+        local file = assert(io.open(path, "r"), "missing fixture: " .. path)
+        local body = file:read("*all")
+        file:close()
+        return body
+    end
+    local HTTPClient = {}
+    function HTTPClient:new()
+        return setmetatable({}, { __index = self })
+    end
+    function HTTPClient:request(request, callback)
+        local headers = {}
+        if request.on_headers then
+            request.on_headers({
+                add = function(_, key, value)
+                    headers[key] = value
+                end,
+            })
+        end
+        table.insert(_G.__direct_requests, {
+            method = request.method,
+            url = request.url,
+            headers = headers,
+            body = request.body,
+        })
+        local response = "OK"
+        if request.url:find("rpcids=wXbhsf", 1, true) then
+            response = read_fixture("notebook_list_response.fixture")
+        elseif request.url:find("rpcids=rLM1Ne", 1, true) then
+            response = read_fixture("get_notebook_response.fixture")
+        elseif request.url:find("GenerateFreeFormStreamed", 1, true) then
+            response = read_fixture("query_response.fixture")
+        end
+        callback({ code = 200, body = response })
+    end
+    return HTTPClient
 end
 
 preload["ltn12"] = function()
@@ -570,6 +653,9 @@ def main() -> None:
         assert(direct_client:load_auth().csrf_token == "csrf-token", "direct client did not load auth")
         assert(direct_client:build_list_notebooks(auth).body:find("wXbhsf", 1, true), "direct client did not build list request")
         assert(direct_client:build_get_notebook(auth, "nb-golden").url:find("source%-path=%%2Fnotebook%%2Fnb%-golden"), "direct client did not build get notebook URL")
+        assert(direct_client:build_create_notebook(auth, "Direct Created").body:find("CCqFvf", 1, true), "direct client did not build create notebook request")
+        assert(direct_client:build_register_file_source(auth, "nb-golden", "Book.epub").body:find("o4cbdc", 1, true), "direct client did not build source registration request")
+        assert(direct_client:build_upload_start_body("nb-golden", "Book.epub", "src-golden"):find('"PROJECT_ID":"nb%-golden"'), "direct client did not build upload start body")
         assert(direct_client:build_ask(auth, { source_ids = { "src-golden" }, prompt = "Prompt?", conversation_id = "conv-golden" }).url:find("GenerateFreeFormStreamed", 1, true), "direct client did not build ask URL")
         assert(direct_client:parse_ask(read_fixture("query_response.fixture")).answer:find("Golden answer", 1, true), "direct client did not parse ask response")
         local live_notebooks = assert(direct_client:list_notebooks())
@@ -584,6 +670,15 @@ def main() -> None:
         assert(first_direct_request.body:find("f.req=", 1, true), "direct transport did not send form body")
         local live_notebook = assert(direct_client:get_notebook("nb-golden"))
         assert(live_notebook.sources[1].id == "src-golden", "direct client get_notebook did not parse sources")
+        local created_direct = assert(direct_client:create_notebook("Direct Created"))
+        assert(created_direct.notebook.id == "created-direct", "direct client create_notebook did not parse notebook id")
+        local uploaded_direct = assert(direct_client:upload_source("created-direct", {
+            file_path = "/tmp/book.epub",
+            title = "Direct Source",
+            wait = true,
+        }))
+        assert(uploaded_direct.source_id == "src-direct-upload", "direct client upload_source did not return source id")
+        assert(_G.__direct_upload_started == true and _G.__direct_upload_finalized == true, "direct client upload_source did not use resumable upload")
         local live_answer = assert(direct_client:ask({
             notebook_id = "nb-golden",
             selected_text = "Lua direct selected text",
@@ -591,6 +686,33 @@ def main() -> None:
             book = { title = "Fixture Book", position = "smoke" },
         }))
         assert(live_answer.adapter == "lua-direct" and live_answer.answer:find("Golden answer", 1, true), "direct client ask did not parse answer")
+
+        local Client = require("client")
+        local pending_async = {}
+        local async_transport = {
+            post_form_async = function(url, body, _, _, callback)
+                table.insert(pending_async, { url = url, body = body, callback = callback })
+            end,
+        }
+        local async_direct = DirectClient:new(fake_settings, async_transport)
+        local async_client = Client:new(fake_settings, {})
+        async_client.direct_client = async_direct
+        local async_job = assert(async_client:start_ask_job({
+            notebook_id = "nb-golden",
+            selected_text = "Async selected text",
+            prompt = "Explain async.",
+            book = { title = "Fixture Book" },
+        }))
+        assert(async_job.status == "running", "lua-direct start_ask_job should return before NotebookLM answers")
+        assert(#pending_async == 1 and pending_async[1].url:find("rpcids=rLM1Ne", 1, true), "lua-direct async ask should first request notebook sources")
+        local running_job = assert(async_client:get_ask_job(async_job.job_id))
+        assert(running_job.status == "running", "lua-direct async job should remain running before callbacks")
+        pending_async[1].callback(read_fixture("get_notebook_response.fixture"), nil, 200)
+        assert(#pending_async == 2 and pending_async[2].url:find("GenerateFreeFormStreamed", 1, true), "lua-direct async ask should request answer after sources")
+        pending_async[2].callback(read_fixture("query_response.fixture"), nil, 200)
+        local completed_job = assert(async_client:get_ask_job(async_job.job_id))
+        assert(completed_job.status == "succeeded", "lua-direct async job did not complete")
+        assert(completed_job.result.answer:find("Golden answer", 1, true), "lua-direct async job did not parse answer")
         '''
     )
     plugin = lua.execute(f'return dofile("{PLUGIN_DIR / "main.lua"}")')
@@ -648,14 +770,19 @@ def main() -> None:
         assert(menu.notebooklm.sub_item_table[2].text == "Answers", "missing NotebookLM answers menu")
         local settings_menu = menu.notebooklm.sub_item_table[5]
         assert(settings_menu and settings_menu.text == "Settings", "missing NotebookLM settings menu")
-        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 7, "settings menu does not expose expected settings")
-        assert(settings_menu.sub_item_table[1].text_func():find("bridge", 1, true), "backend menu did not show bridge default")
+        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 10, "settings menu does not expose expected settings")
+        assert(settings_menu.sub_item_table[1].text_func():find("English", 1, true), "language menu did not show English default")
         settings_menu.sub_item_table[1].callback()
-        assert(plugin.settings:read("backend") == "lua-direct", "backend toggle did not switch to lua-direct")
+        assert(plugin.settings:read("language") == "es", "language toggle did not switch to Spanish")
         settings_menu.sub_item_table[1].callback()
-        assert(plugin.settings:read("backend") == "bridge", "backend toggle did not switch back to bridge")
-        assert(settings_menu.sub_item_table[2].text_func():find("not set", 1, true), "lua direct auth bundle menu did not show unset state")
+        assert(plugin.settings:read("language") == "en", "language toggle did not switch back to English")
+        assert(settings_menu.sub_item_table[2].text_func():find("bridge", 1, true), "backend menu did not show bridge default")
         settings_menu.sub_item_table[2].callback()
+        assert(plugin.settings:read("backend") == "lua-direct", "backend toggle did not switch to lua-direct")
+        settings_menu.sub_item_table[2].callback()
+        assert(plugin.settings:read("backend") == "bridge", "backend toggle did not switch back to bridge")
+        assert(settings_menu.sub_item_table[3].text_func():find("not set", 1, true), "lua direct auth bundle menu did not show unset state")
+        settings_menu.sub_item_table[3].callback()
         assert(plugin.notebooklm_ui.input_dialog == nil, "lua direct auth bundle menu should not use NotebookLMUI input dialog")
         local uimanager_for_lua_direct = require("ui/uimanager")
         local auth_dialog = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
@@ -663,36 +790,44 @@ def main() -> None:
         auth_dialog.input = "/tmp/notebooklm-direct-auth-bundle.json"
         auth_dialog.buttons[1][2].callback()
         assert(plugin.settings:read("direct_auth_bundle_path") == "/tmp/notebooklm-direct-auth-bundle.json", "lua direct auth bundle path was not saved")
-        assert(settings_menu.sub_item_table[3].text_func():find("auto", 1, true), "lua direct notebook menu did not show auto state")
-        settings_menu.sub_item_table[3].callback()
+        assert(settings_menu.sub_item_table[4].text_func():find("127.0.0.1:8767", 1, true), "auth broker URL menu did not show default")
+        settings_menu.sub_item_table[4].callback()
+        local broker_dialog = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
+        assert(broker_dialog and broker_dialog.title == "NotebookLM auth broker URL", "auth broker URL dialog did not render")
+        broker_dialog.input = "http://192.168.0.10:8767"
+        broker_dialog.buttons[1][2].callback()
+        assert(plugin.settings:read("auth_broker_url") == "http://192.168.0.10:8767", "auth broker URL was not saved")
+        assert(settings_menu.sub_item_table[5].text == "Refresh auth from broker", "missing auth broker refresh action")
+        assert(settings_menu.sub_item_table[6].text_func():find("auto", 1, true), "lua direct notebook menu did not show auto state")
+        settings_menu.sub_item_table[6].callback()
         local notebook_dialog = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
         assert(notebook_dialog and notebook_dialog.title == "Lua direct notebook ID", "lua direct notebook dialog did not render")
         notebook_dialog.input = "nb-golden"
         notebook_dialog.buttons[1][2].callback()
         assert(plugin.settings:read("direct_notebook_id") == "nb-golden", "lua direct notebook id was not saved")
-        settings_menu.sub_item_table[4].callback()
+        settings_menu.sub_item_table[7].callback()
         local smoke_error = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
         assert(smoke_error and smoke_error.text and smoke_error.text:find("Set NotebookLM backend", 1, true), "lua direct smoke should require lua-direct backend")
-        settings_menu.sub_item_table[1].callback()
-        settings_menu.sub_item_table[4].callback()
+        settings_menu.sub_item_table[2].callback()
+        settings_menu.sub_item_table[7].callback()
         local smoke_result = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
         assert(smoke_result and smoke_result.text and smoke_result.text:find("Lua direct smoke OK", 1, true), "lua direct smoke did not complete through HTTPS stub")
-        settings_menu.sub_item_table[1].callback()
+        settings_menu.sub_item_table[2].callback()
         assert(plugin.settings:read("backend") == "bridge", "backend was not restored after lua-direct smoke")
-        assert(settings_menu.sub_item_table[5].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
-        settings_menu.sub_item_table[5].callback()
+        assert(settings_menu.sub_item_table[8].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
+        settings_menu.sub_item_table[8].callback()
         assert(plugin.settings:read("enable_upload") == false, "source upload toggle did not disable upload")
-        settings_menu.sub_item_table[5].callback()
+        settings_menu.sub_item_table[8].callback()
         assert(plugin.settings:read("enable_upload") == true, "source upload toggle did not re-enable upload")
-        assert(settings_menu.sub_item_table[6].text_func():find("multipart", 1, true), "upload mode menu did not show multipart mode")
-        settings_menu.sub_item_table[6].callback()
+        assert(settings_menu.sub_item_table[9].text_func():find("multipart", 1, true), "upload mode menu did not show multipart mode")
+        settings_menu.sub_item_table[9].callback()
         assert(plugin.settings:read("upload_mode") == "path", "upload mode toggle did not switch to path")
-        settings_menu.sub_item_table[6].callback()
+        settings_menu.sub_item_table[9].callback()
         assert(plugin.settings:read("upload_mode") == "multipart", "upload mode toggle did not switch back to multipart")
-        assert(settings_menu.sub_item_table[7].text_func():find("enabled", 1, true), "open answer setting did not show enabled state")
-        settings_menu.sub_item_table[7].callback()
+        assert(settings_menu.sub_item_table[10].text_func():find("enabled", 1, true), "open answer setting did not show enabled state")
+        settings_menu.sub_item_table[10].callback()
         assert(plugin.settings:read("open_answer_automatically") == false, "open answer toggle did not disable auto-open")
-        settings_menu.sub_item_table[7].callback()
+        settings_menu.sub_item_table[10].callback()
         assert(plugin.settings:read("open_answer_automatically") == true, "open answer toggle did not re-enable auto-open")
 
         local unsafe_value = function() return "unsafe" end
@@ -726,6 +861,34 @@ def main() -> None:
         )
         assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "stale local link was used after bridge returned 404")
         plugin.notebooklm_ui:_close_input()
+        plugin.storage:clear_link(plugin.ui)
+
+        plugin.settings:write("backend", "lua-direct")
+        plugin.settings:write("direct_notebook_id", "nb-golden")
+        plugin.notebooklm_ui:show_setup()
+        local direct_setup = plugin.notebooklm_ui.input_dialog
+        assert(direct_setup and direct_setup.buttons[2] and #direct_setup.buttons[2] == 3, "lua-direct setup should expose list/create/upload actions")
+        assert(direct_setup.buttons[2][1].text == "List", "lua-direct setup should keep notebook listing")
+        assert(direct_setup.buttons[2][2].text == "Create", "lua-direct setup should expose notebook creation")
+        assert(direct_setup.buttons[2][3].text == "Create+Upload", "lua-direct setup should expose source upload")
+        local direct_link = plugin.storage:get_link(plugin.ui)
+        assert(direct_link and direct_link.notebook_id == "nb-golden", "lua-direct direct_notebook_id was not used as the local book link")
+        plugin.notebooklm_ui:_close_input()
+        plugin.notebooklm_ui:create_notebook("Direct UI Created", true)
+        local direct_ui_link = plugin.storage:get_link(plugin.ui)
+        assert(direct_ui_link and direct_ui_link.notebook_id == "created-direct", "lua-direct create+upload did not save local link")
+        assert(direct_ui_link.source_id == "src-direct-upload", "lua-direct create+upload did not save uploaded source id")
+        local direct_request_count = #_G.__direct_requests
+        plugin.notebooklm_ui:ask_with_prompt(
+            "Lua direct highlighted passage",
+            "Explain this direct passage.",
+            "Direct"
+        )
+        local direct_viewer = require("ui/widget/textviewer")
+        assert(direct_viewer.last_viewer and direct_viewer.last_viewer.title == "NotebookLM - Answer", "lua-direct ask did not open the structured answer viewer")
+        assert(direct_viewer.last_viewer.text:find("Golden answer with citation", 1, true), "lua-direct ask did not render the NotebookLM answer")
+        assert(#_G.__direct_requests >= direct_request_count + 2, "lua-direct normal ask did not call NotebookLM get+ask RPCs")
+        plugin.settings:write("backend", "bridge")
         plugin.storage:clear_link(plugin.ui)
 
         local unlinked_item = highlight_buttons["notebooklm"]({
@@ -802,6 +965,18 @@ def main() -> None:
         prompt_hub.buttons[1][1].callback()
         local prompt_picker = plugin.notebooklm_ui.input_dialog
         assert(prompt_picker and prompt_picker.title:find("Ask NotebookLM", 1, true), "ask action did not open prompt picker")
+        prompt_picker.buttons[1][2].callback()
+        local edit_prompt_dialog = plugin.notebooklm_ui.input_dialog
+        assert(edit_prompt_dialog and edit_prompt_dialog.title:find("Edit prompt", 1, true), "preset edit prompt dialog did not render")
+        assert(edit_prompt_dialog.input and edit_prompt_dialog.input:find("Explain this passage", 1, true), "preset edit prompt did not preload the full prompt")
+        edit_prompt_dialog.input = edit_prompt_dialog.input .. "\nAlso explain the part I did not understand."
+        edit_prompt_dialog.buttons[1][2].callback()
+        local edited_prompt_payload = _G.__last_encoded_value
+        assert(edited_prompt_payload and edited_prompt_payload.prompt:find("Also explain", 1, true), "edited preset prompt was not sent")
+        prompt_item.callback()
+        prompt_hub = plugin.notebooklm_ui.input_dialog
+        prompt_hub.buttons[1][1].callback()
+        prompt_picker = plugin.notebooklm_ui.input_dialog
         assert(prompt_picker.buttons[6][2].text == "Back", "prompt picker did not expose back navigation")
         prompt_picker.buttons[6][2].callback()
         assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Ask NotebookLM", "prompt back did not return to the NotebookLM hub")
@@ -836,6 +1011,7 @@ def main() -> None:
         assert(viewer.last_viewer.buttons_table[1][1].text == "Follow-up", "answer viewer missing follow-up action")
         assert(viewer.last_viewer.buttons_table[1][2].text == "New question", "answer viewer missing new question action")
         assert(viewer.last_viewer.buttons_table[2][1].text == "Details", "answer viewer missing details action")
+        assert(type(viewer.last_viewer.onSwipe) == "function", "answer viewer missing swipe handler")
         viewer.last_viewer.buttons_table[2][1].callback()
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Prompt", "details did not open prompt section")
         viewer.last_viewer.buttons_table[2][2].callback()
