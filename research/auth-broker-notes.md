@@ -1,4 +1,28 @@
-# Auth Broker Implementation Plan
+# Auth Broker Notes (Postponed Spike)
+
+This was an implementation spike for a local auth broker. It is intentionally
+not part of the active product right now.
+
+Current decision:
+
+```text
+Mac/PC -> nlm-lite login -> auth bundle -> USB/SSH sync -> Kindle
+Kindle / KOReader -> lua-direct -> NotebookLM
+```
+
+Reason:
+
+- A phone QR flow cannot directly transfer Google/NotebookLM cookies from a
+  normal phone browser to KOReader.
+- A broker still needs a trusted desktop/browser-automation helper.
+- Auth refresh is expected to be rare, so a script-based sync flow is simpler
+  and safer than a LAN broker.
+
+The original spike notes remain below for possible future reuse.
+
+---
+
+# Original Auth Broker Implementation Plan
 
 ## Goal
 

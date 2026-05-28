@@ -170,10 +170,6 @@ function Client:_bridge_url()
     return self.settings:read("bridge_url")
 end
 
-function Client:_auth_broker_url()
-    return self.settings:read("auth_broker_url")
-end
-
 function Client:_timeout()
     return tonumber(self.settings:read("timeout")) or 120
 end
@@ -215,37 +211,6 @@ function Client:_delete(path)
         return nil, err
     end
     return self.http.delete(self:_bridge_url(), path, self:_short_timeout())
-end
-
-function Client:create_auth_session()
-    return self.http.post(self:_auth_broker_url(), "/auth/sessions", {}, self:_short_timeout())
-end
-
-function Client:get_auth_session(session_id)
-    return self.http.get(
-        self:_auth_broker_url(),
-        "/auth/sessions/" .. self.http.path_escape(session_id),
-        self:_short_timeout()
-    )
-end
-
-function Client:download_auth_bundle(session_id, pairing_code)
-    return self.http.get(
-        self:_auth_broker_url(),
-        "/auth/sessions/" .. self.http.path_escape(session_id)
-            .. "/bundle?code=" .. self.http.path_escape(pairing_code),
-        self:_timeout()
-    )
-end
-
-function Client:complete_auth_session(session_id, pairing_code)
-    return self.http.post(
-        self:_auth_broker_url(),
-        "/auth/sessions/" .. self.http.path_escape(session_id)
-            .. "/complete?code=" .. self.http.path_escape(pairing_code),
-        {},
-        self:_short_timeout()
-    )
 end
 
 function Client:health()

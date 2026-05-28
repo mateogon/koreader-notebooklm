@@ -7,8 +7,6 @@ does not copy auth files or implement MCP.
 from fastapi import FastAPI
 
 from .adapters.factory import create_adapter
-from .auth_broker.routes import router as auth_broker_router
-from .auth_broker.store import AuthBrokerStore
 from .config import BridgeConfig, load_config
 from .routes.ask import router as ask_router
 from .routes.books import router as books_router
@@ -30,13 +28,11 @@ def create_app(config: BridgeConfig | None = None) -> FastAPI:
     app.state.adapter = create_adapter(bridge_config)
     app.state.book_store = BookMappingStore(bridge_config.data_dir)
     app.state.ask_jobs = AskJobStore()
-    app.state.auth_broker = AuthBrokerStore()
     app.include_router(health_router)
     app.include_router(notebooks_router)
     app.include_router(books_router)
     app.include_router(sources_router)
     app.include_router(ask_router)
-    app.include_router(auth_broker_router)
     return app
 
 

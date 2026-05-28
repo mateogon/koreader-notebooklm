@@ -1,23 +1,23 @@
 # Fresh PC Auth Setup
 
-Purpose: set up NotebookLM auth on a new desktop machine so the bridge can run
-with either `nlm` or `nlm-lite`.
+Purpose: create a NotebookLM auth bundle on Mac/PC and sync it to Kindle for
+KOReader `lua-direct`.
 
-`nlm-lite` does not implement Google login. It only reads existing local auth
-state or an explicit auth bundle. For now, the simplest fresh setup is:
+The preferred flow does not require `nlm`:
 
 ```text
-install nlm -> run nlm login -> verify nlm doctor -> run bridge adapter=nlm-lite
+scripts/nlm-lite-login.py -> Chrome login -> auth bundle
+scripts/sync-auth-to-kindle.sh -> USB/SSH copy to Kindle
 ```
-
-This uses `nlm` only as the auth bootstrap. In `nlm-lite` mode, bridge requests
-do not call the `nlm` subprocess.
 
 ## 1. Install Runtime
 
 Install Python 3.11+ and `uv` on the PC.
 
-Then install the NotebookLM CLI:
+`nlm` is optional. It is only useful if you want to export an existing
+NotebookLM MCP/CLI profile.
+
+Optional `nlm` install:
 
 ```sh
 uv tool install notebooklm-mcp-cli
@@ -35,84 +35,56 @@ Confirm the command is available:
 nlm --version
 ```
 
-## 2. Login From Scratch
+## 2. Create an Auth Bundle
 
-Run:
+Preferred path:
 
 ```sh
-nlm login
+scripts/nlm-lite-login.py --profile default --overwrite
 ```
 
-Follow the browser login flow. This creates local auth/profile state under the
-user's home directory, typically:
+This opens Chrome, waits for NotebookLM login, then writes outside the repo:
 
 ```text
-~/.notebooklm-mcp-cli/
+~/.koreader-notebooklm/auth-bundles/default-auth-bundle.json
 ```
 
-For multiple Google accounts, use a named profile:
+Named profile:
 
 ```sh
-nlm login --profile <profile-name>
-nlm login switch <profile-name>
+scripts/nlm-lite-login.py --profile koreader --overwrite
 ```
 
-For WSL, `nlm login --wsl` may be useful.
-
-## 3. Verify Auth
-
-Run:
-
-```sh
-nlm doctor
-nlm notebook list --json
-```
-
-Expected result:
-
-- `nlm doctor` reports cookies present.
-- `nlm notebook list --json` returns a JSON list.
-- No auth files are copied into this repository.
-
-## 4. Create an `nlm-lite` Auth Bundle
-
-Preferred path: use this repo's standalone browser login, without `nlm`:
-
-```sh
-scripts/nlm-lite-login.py --profile koreader-fresh --overwrite
-```
-
-This opens Chrome, waits for you to sign in to NotebookLM, extracts cookies and
-NotebookLM page tokens through Chrome DevTools Protocol, then writes:
-
-```text
-~/.koreader-notebooklm/auth-bundles/koreader-fresh-auth-bundle.json
-```
-
-Fallback path: if you already have an `nlm` profile and only need to export it:
+Fallback if you already have an `nlm` profile:
 
 ```sh
 scripts/export-nlm-auth-bundle.py --profile <profile-name>
 ```
 
-The fallback writes outside the repo:
-
-```text
-~/.notebooklm-mcp-cli/auth-bundles/<profile-name>-auth-bundle.json
-```
-
-The file contains cookies and NotebookLM page tokens. Treat it like a password:
-do not commit it, paste it, or put it in regular logs.
-
-To overwrite an old bundle after re-login:
+## 3. Sync to Kindle
 
 ```sh
-scripts/nlm-lite-login.py --profile <profile-name> --overwrite
+scripts/sync-auth-to-kindle.sh --usb /Volumes/Kindle
 ```
 
-## 5. Run Bridge With `nlm-lite`
+or:
 
-From this repo:
+```sh
+scripts/sync-auth-to-kindle.sh --ssh <kindle-ip> --port 2222
+```
+
+The sync script creates auth if needed, copies the bundle, and writes
+`notebooklm.lua` for `backend = "lua-direct"`.
+
+Force a fresh login and sync:
+
+```sh
+scripts/sync-auth-to-kindle.sh --usb /Volumes/Kindle --refresh
+```
+
+## 4. Optional Bridge Development
+
+The bridge can still run with `nlm-lite` for development:
 
 ```sh
 cd bridge
@@ -122,17 +94,7 @@ KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID=<NOTEBOOK_ID> \
 uv run uvicorn --app-dir src koreader_notebooklm_bridge.app:app --host 127.0.0.1 --port 8765
 ```
 
-For local development, `nlm-lite` can still read a named `nlm` profile directly:
-
-```sh
-KOREADER_NOTEBOOKLM_NLM_PROFILE=<profile-name>
-```
-
-The explicit auth bundle path is preferred for portability testing because it is
-closer to the future Kindle/mobile flow and does not require the `nlm` CLI at
-bridge runtime.
-
-## 6. Smoke Test `nlm-lite`
+## 5. Smoke Test `nlm-lite`
 
 In another shell:
 
@@ -156,5 +118,4 @@ scripts/smoke-koreader-bridge-flow.sh
 - Do not commit `auth.json`, `cookies.json`, browser profile data, or exported
   auth bundles.
 - Do not paste cookies into docs, issues, or logs.
-- Do not expose `nlm-lite` auth export over LAN. Auth export/pairing is future
-  work and must require explicit local authorization.
+- Do not expose auth export over LAN.

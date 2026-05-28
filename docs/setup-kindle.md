@@ -1,12 +1,14 @@
 # Kindle Setup
 
-The initial supported shape is still:
+The preferred Kindle shape is now:
 
 ```text
-Kindle KOReader plugin -> Mac/local-network bridge -> NotebookLM adapter
+KOReader on Kindle -> lua-direct -> NotebookLM
+Mac/PC -> auth sync only when credentials need refresh
 ```
 
-An all-in-Kindle client is a future experiment, not part of the current MVP.
+The Mac/PC is not required for normal reading once the auth bundle has been
+copied to the Kindle.
 
 ## Install Plugin
 
@@ -36,39 +38,35 @@ If working from a Kindle shell, use the on-device path:
 scripts/koreader-runtime-preflight.sh /mnt/us/koreader/plugins http://<mac-lan-ip>:8765
 ```
 
-## Lua Direct Auth Import
+## Auth Sync
 
-Experimental `lua-direct` mode can read a portable auth bundle on the Kindle.
-Generate or reuse the bundle on the Mac, then copy it over SSH:
-
-```sh
-KOREADER_KINDLE_HOST=<kindle-ip> \
-KOREADER_NOTEBOOKLM_NLM_PROFILE=<profile> \
-scripts/import-auth-to-kindle.sh
-```
-
-To also write the KOReader plugin settings for `lua-direct`:
+Recommended USB flow:
 
 ```sh
-KOREADER_KINDLE_HOST=<kindle-ip> \
-KOREADER_NOTEBOOKLM_CONFIGURE_KINDLE=1 \
-KOREADER_NOTEBOOKLM_DIRECT_NOTEBOOK_ID=<notebook-id> \
-scripts/import-auth-to-kindle.sh
+scripts/sync-auth-to-kindle.sh --usb /Volumes/Kindle
 ```
 
-The remote bundle path defaults to:
+Power-user SSH flow:
+
+```sh
+scripts/sync-auth-to-kindle.sh --ssh <kindle-ip> --port 2222
+```
+
+Both flows write the auth bundle to:
 
 ```text
 /mnt/us/koreader/settings/notebooklm-auth-bundle.json
 ```
 
-Do not copy auth bundles, cookies, or KOReader settings containing auth paths
-into the repository.
+and configure KOReader for `backend = "lua-direct"`.
+
+For more detail, see [Auth sync](auth-sync.md).
 
 ## Bridge URL
 
-The Kindle cannot use `127.0.0.1` to reach a bridge running on the Mac. Use the
-Mac's LAN IP in the plugin menu:
+Bridge mode still exists for development and compatibility testing. The Kindle
+cannot use `127.0.0.1` to reach a bridge running on the Mac. Use the Mac's LAN
+IP in the plugin menu:
 
 ```text
 NotebookLM -> Bridge URL
@@ -99,8 +97,6 @@ If that file is absent, search under `/mnt/us/koreader` for recent `.log` files.
 
 ## Current Limits
 
-- Bridge mode still remains the most stable path for normal reading.
-- `lua-direct` is experimental and uses a copied auth bundle generated on
-  Mac/Windows.
+- `lua-direct` uses a copied auth bundle generated on Mac/Windows.
 - Direct upload support depends on NotebookLM's private resumable upload
   protocol and should be tested with small EPUB/PDF files first.

@@ -1,9 +1,7 @@
 local Event = require("ui/event")
-local DataStorage = require("datastorage")
 local InputContainer = require("ui/widget/container/inputcontainer")
 local NetworkMgr = require("ui/network/manager")
 local UIManager = require("ui/uimanager")
-local Json = require("direct.codec")
 local _ = require("gettext")
 
 local NotebookLM = InputContainer:new{
@@ -155,20 +153,6 @@ function NotebookLM:addToMainMenu(menu_items)
                     },
                     {
                         text_func = function()
-                            return _("Auth broker URL: ") .. tostring(self.settings:read("auth_broker_url"))
-                        end,
-                        callback = function()
-                            self:showAuthBrokerUrlDialog()
-                        end,
-                    },
-                    {
-                        text = _("Refresh auth from broker"),
-                        callback = function()
-                            self:refreshAuthFromBroker()
-                        end,
-                    },
-                    {
-                        text_func = function()
                             local notebook_id = tostring(self.settings:read("direct_notebook_id") or "")
                             if notebook_id == "" then
                                 notebook_id = _("auto")
@@ -247,38 +231,6 @@ function NotebookLM:showBridgeUrlDialog()
     UIManager:show(input_dialog)
 end
 
-function NotebookLM:showAuthBrokerUrlDialog()
-    local InputDialog = require("ui/widget/inputdialog")
-    local input_dialog
-    input_dialog = InputDialog:new{
-        title = _("NotebookLM auth broker URL"),
-        input_hint = _("http://127.0.0.1:8767"),
-        input_type = "text",
-        input = self.settings:read("auth_broker_url"),
-        buttons = {
-            {
-                {
-                    text = _("Cancel"),
-                    callback = function()
-                        UIManager:close(input_dialog)
-                    end,
-                },
-                {
-                    text = _("Save"),
-                    callback = function()
-                        local url = input_dialog:getInputText()
-                        if url and url ~= "" then
-                            self.settings:write("auth_broker_url", url)
-                        end
-                        UIManager:close(input_dialog)
-                    end,
-                },
-            },
-        },
-    }
-    UIManager:show(input_dialog)
-end
-
 local function show_notice(text, timeout)
     local InfoMessage = require("ui/widget/infomessage")
     UIManager:show(InfoMessage:new{
@@ -295,16 +247,6 @@ local function show_error(text)
         text = tostring(text),
         timeout = 8,
     })
-end
-
-local function write_text_file(path, body)
-    local file = io.open(path or "", "w")
-    if not file then
-        return nil, "Could not write file: " .. tostring(path)
-    end
-    file:write(body or "")
-    file:close()
-    return true
 end
 
 function NotebookLM:showLuaDirectAuthBundleDialog()
@@ -377,117 +319,6 @@ function NotebookLM:toggleLanguage()
     local next_language = current == "en" and "es" or "en"
     self.settings:write("language", next_language)
     show_notice(self:_t("language") .. ": " .. self.prompts.language_label(next_language))
-end
-
-function NotebookLM:_authBundleImportPath()
-    return DataStorage:getSettingsDir() .. "/notebooklm-auth-bundle.json"
-end
-
-function NotebookLM:refreshAuthFromBroker()
-    local broker_url = tostring(self.settings:read("auth_broker_url") or "")
-    if broker_url == "" then
-        self:showAuthBrokerUrlDialog()
-        return
-    end
-
-    show_notice("Creating NotebookLM auth session...", 2)
-    local session, err = self.client:create_auth_session()
-    if not session then
-        show_error("Could not create auth broker session: " .. tostring(err))
-        return
-    end
-    self:showAuthBrokerSession(session)
-end
-
-function NotebookLM:showAuthBrokerSession(session, status)
-    local ConfirmBox = require("ui/widget/confirmbox")
-    local Font = require("ui/font")
-    local dialog
-    local text = table.concat({
-        "NotebookLM auth refresh",
-        "",
-        "Open this URL on your phone or Mac:",
-        tostring(session.browser_url or ""),
-        "",
-        "Pairing code: " .. tostring(session.pairing_code or ""),
-        "Status: " .. tostring(status and status.status or "pending"),
-        tostring(status and status.message or "Open the URL and start login on the broker Mac."),
-    }, "\n")
-
-    local function reshow(next_status)
-        UIManager:close(dialog)
-        self:showAuthBrokerSession(session, next_status)
-    end
-
-    dialog = ConfirmBox:new{
-        icon = "notice-info",
-        face = Font:getFace("smallinfofont"),
-        text = text,
-        ok_text = _("Close"),
-        cancel_text = _("Cancel"),
-        keep_dialog_open = true,
-        cancel_callback = function()
-            UIManager:close(dialog)
-        end,
-        ok_callback = function()
-            UIManager:close(dialog)
-        end,
-        other_buttons_first = true,
-        other_buttons = {
-            {
-                {
-                    text = _("Check status"),
-                    callback = function()
-                        local next_status, err = self.client:get_auth_session(session.session_id)
-                        if not next_status then
-                            show_error("Auth status failed: " .. tostring(err))
-                            return
-                        end
-                        reshow(next_status)
-                    end,
-                },
-                {
-                    text = _("Download auth"),
-                    callback = function()
-                        self:downloadAuthBrokerBundle(session, dialog)
-                    end,
-                },
-            },
-        },
-    }
-    UIManager:show(dialog)
-end
-
-function NotebookLM:downloadAuthBrokerBundle(session, dialog)
-    show_notice("Downloading NotebookLM auth bundle...", 2)
-    local bundle, err = self.client:download_auth_bundle(session.session_id, session.pairing_code)
-    if not bundle then
-        show_error("Auth bundle is not ready: " .. tostring(err))
-        return
-    end
-
-    local path = self:_authBundleImportPath()
-    local ok, write_err = write_text_file(path, Json.encode(bundle))
-    if not ok then
-        show_error(write_err)
-        return
-    end
-    self.settings:write("direct_auth_bundle_path", path)
-    self.client:complete_auth_session(session.session_id, session.pairing_code)
-
-    local DirectClient = require("direct.client")
-    local direct = DirectClient:new(self.settings)
-    local notebooks, smoke_err = direct:list_notebooks()
-    if not notebooks then
-        show_error("Saved auth, but lua-direct smoke failed: " .. tostring(smoke_err))
-        return
-    end
-
-    UIManager:close(dialog)
-    show_notice(
-        "NotebookLM auth imported. Notebooks: " .. tostring(#(notebooks.notebooks or {})),
-        6
-    )
 end
 
 function NotebookLM:runLuaDirectSmoke()

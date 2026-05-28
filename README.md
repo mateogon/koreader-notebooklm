@@ -1,12 +1,15 @@
 # KOReader NotebookLM
 
-KOReader NotebookLM is a KOReader plugin plus a local Python bridge for sending selected text from KOReader to Google NotebookLM and reading the answer inside KOReader.
+KOReader NotebookLM is a KOReader plugin for sending selected text from KOReader
+to Google NotebookLM and reading the answer inside KOReader.
 
 ```text
-KOReader Lua plugin -> local HTTP bridge -> NotebookLM adapter
+Kindle / KOReader lua-direct -> NotebookLM
+Mac/PC -> auth sync only when credentials need refresh
 ```
 
-The current bridge target is macOS. The structure is intentionally kept portable so a future Android/Termux or small local-server setup can reuse the same plugin boundary.
+A local Python bridge still exists for development and compatibility testing,
+but the current product direction is Kindle-side `lua-direct` for daily use.
 
 ## Current Status
 
@@ -21,19 +24,20 @@ Implemented and locally validated:
 - Structured answer viewer with `Follow-up`, `New question`, `Details`, and optional automatic opening.
 - Local FastAPI bridge with `mock` and `nlm` adapters.
 - Experimental `nlm-lite` bridge adapter that talks to NotebookLM directly over HTTP without calling the `nlm` subprocess.
+- Experimental KOReader `lua-direct` backend that talks to NotebookLM directly from Kindle/KOReader using a synced auth bundle.
+- Auth sync script for Mac/PC to Kindle over USB or SSH.
 - Background `/ask/jobs` flow so long NotebookLM answers do not block KOReader.
 - Conversation continuity through NotebookLM `conversation_id` for follow-up questions.
 - Basic source upload path, including preserving file extensions for EPUB/PDF detection.
 
 Known gaps:
 
-- Real Kindle/device validation is still pending.
 - Real create-and-upload from KOReader UI needs more validation and hardening.
 - Bridge LAN security token is not implemented yet.
 - Uploads for large books/PDFs still need memory and timeout hardening.
-- NotebookLM auth is delegated to the local `nlm` CLI profile.
-- `nlm-lite` is experimental and still needs live hardening before it can guide a Lua direct client.
-- No direct NotebookLM auth, no MCP implementation, and no all-in-Kindle client yet.
+- NotebookLM auth generation is desktop-assisted; KOReader/Kindle does not perform Google login.
+- `lua-direct` uses NotebookLM private web endpoints and needs continued hardening.
+- No MCP implementation.
 
 ## Repository Layout
 
@@ -47,7 +51,33 @@ research/ Research notes and reference links
 AGENTS.md Development guide for future agents
 ```
 
-## Quick Start: macOS Development
+## Quick Start: Kindle
+
+Install the plugin while Kindle is mounted:
+
+```sh
+scripts/install-plugin-dev.sh /Volumes/Kindle/koreader/plugins --copy
+```
+
+Sync NotebookLM auth and configure `lua-direct`:
+
+```sh
+scripts/sync-auth-to-kindle.sh --usb /Volumes/Kindle
+```
+
+Eject Kindle, open KOReader, then run:
+
+```text
+NotebookLM -> Settings -> Lua direct smoke
+```
+
+SSH alternative:
+
+```sh
+scripts/sync-auth-to-kindle.sh --ssh <kindle-ip> --port 2222
+```
+
+## Quick Start: Bridge Development
 
 Install bridge dependencies:
 
@@ -62,17 +92,7 @@ Run the bridge in mock mode:
 KOREADER_NOTEBOOKLM_ADAPTER=mock ../scripts/run-bridge-dev.sh
 ```
 
-Run the bridge in real `nlm` mode:
-
-```sh
-KOREADER_NOTEBOOKLM_ADAPTER=nlm \
-KOREADER_NOTEBOOKLM_NLM_COMMAND=/path/to/nlm \
-../scripts/run-bridge-dev.sh
-```
-
-The real mode assumes `nlm` is already installed and authenticated. This repo does not manage NotebookLM credentials.
-
-Run the experimental direct adapter:
+Run the bridge with the experimental direct Python adapter:
 
 ```sh
 KOREADER_NOTEBOOKLM_ADAPTER=nlm-lite \
@@ -80,7 +100,7 @@ KOREADER_NOTEBOOKLM_DEFAULT_NOTEBOOK_ID=<NOTEBOOK_ID> \
 ../scripts/run-bridge-dev.sh
 ```
 
-`nlm-lite` uses an explicit auth bundle outside the repo. Create one without `nlm`:
+`nlm-lite` uses an explicit auth bundle outside the repo. Create one:
 
 ```sh
 scripts/nlm-lite-login.py --profile koreader-fresh --overwrite
@@ -98,7 +118,7 @@ Install the plugin into a KOReader plugin directory:
 scripts/install-plugin-dev.sh /path/to/koreader/plugins --copy
 ```
 
-Then restart KOReader and configure the bridge URL if needed:
+For bridge mode, restart KOReader and configure the bridge URL if needed:
 
 ```text
 http://127.0.0.1:8765
@@ -110,7 +130,7 @@ http://127.0.0.1:8765
 2. Tap `NotebookLM`.
 3. Link the current book to a NotebookLM notebook if needed.
 4. Choose a preset prompt or enter a custom question.
-5. Continue reading while the bridge asks NotebookLM in the background.
+5. Continue reading while NotebookLM answers in the background.
 6. Open the answer automatically, or find it later under `NotebookLM answers`.
 7. From an answer, ask a follow-up in the same NotebookLM conversation or start a new question.
 
@@ -128,7 +148,8 @@ The `.gitignore` excludes common local artifacts, including:
 - generated NotebookLM answer files
 - downloaded reference repos
 
-When running the bridge on `0.0.0.0` for Kindle/Android testing, keep it on a trusted network. A local bridge token is planned but not implemented yet.
+When running the bridge on `0.0.0.0` for Kindle/Android testing, keep it on a
+trusted network. The preferred Kindle flow does not require a LAN bridge.
 
 ## Useful Commands
 
@@ -154,13 +175,12 @@ curl http://127.0.0.1:8765/health
 
 ## Next Steps
 
-- Validate on a physical Kindle or Android/Termux KOReader setup.
 - Validate real create-and-upload from KOReader UI with more EPUB/PDF samples.
-- Add an optional bridge API token for LAN use.
+- Polish `scripts/sync-auth-to-kindle.sh` through more USB/SSH setups.
 - Improve upload handling for large files and PDFs.
 - Improve answer notification UX while jobs are running.
 - Harden book identity beyond path/title/author.
-- Keep the all-in-Kindle path as an experimental future direction.
+- Keep auth generation on desktop unless NotebookLM exposes a suitable official auth/API path.
 
 ## Docs
 
@@ -168,6 +188,7 @@ curl http://127.0.0.1:8765/health
 - [Bridge API](docs/api.md)
 - [macOS setup](docs/setup-mac.md)
 - [Fresh PC auth setup](docs/setup-pc-auth.md)
+- [Auth sync](docs/auth-sync.md)
 - [KOReader setup](docs/setup-koreader.md)
 - [Kindle setup](docs/setup-kindle.md)
 - [Roadmap](docs/roadmap.md)

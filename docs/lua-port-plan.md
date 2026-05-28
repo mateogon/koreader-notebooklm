@@ -3,21 +3,21 @@
 This document freezes the current `nlm-lite` protocol knowledge before any
 direct KOReader Lua client is attempted.
 
-The current supported path remains:
+The current preferred Kindle runtime is:
+
+```text
+KOReader Lua plugin -> Lua NotebookLM client -> NotebookLM
+Mac/Windows helper -> auth bootstrap/export/sync only
+```
+
+The bridge remains useful for development and compatibility:
 
 ```text
 KOReader Lua plugin -> bridge HTTP -> nlm-lite Python adapter -> NotebookLM
 ```
 
-The future experimental path is:
-
-```text
-KOReader Lua plugin -> Lua NotebookLM client -> NotebookLM
-Mac/Windows bridge -> auth bootstrap/export only
-```
-
-Do not start the Lua port until the Python `nlm-lite` bridge keeps passing the
-golden tests and at least one live smoke.
+Auth generation stays on Mac/Windows. Kindle consumes a portable auth bundle
+copied by `scripts/sync-auth-to-kindle.sh`; it does not drive browser login.
 
 ## Boundaries
 
@@ -212,9 +212,9 @@ settings contain:
 backend = lua-direct
 ```
 
-This spike intentionally does not perform live NotebookLM HTTPS requests from
-the normal highlight UX yet. It also does not implement Lua upload, Lua browser
-login, auth export, or source creation as a user-facing feature.
+This direct path now performs live NotebookLM requests when the plugin backend is
+set to `lua-direct`. It intentionally does not implement Lua browser login. Auth
+is generated on Mac/Windows and synced to Kindle.
 
 The macOS KOReader runtime exposes a debug path under:
 

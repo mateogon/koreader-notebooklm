@@ -16,9 +16,13 @@ auth.json
 auth.*.json
 *.auth.json
 *auth-bundle*.json
+*auth_bundle*.json
+notebooklm-auth-bundle.json
 auth-bundles/
+chrome-profiles/
 cookies.txt
 cookies.json
+*.cookies.json
 *.cookies
 cookiejar*
 metadata.json
@@ -54,6 +58,7 @@ bridge/data/
 books/
 local-books/
 downloads/
+library/
 
 # Logs
 *.log
