@@ -89,6 +89,7 @@ plugin-test-output/
 notebooklm.lua
 notebooklm-books.lua
 notebooklm-answers.lua
+notebooklm-prompts.lua
 notebooklm-last-answer.md
 notebooklm-answer-*.md
 koreader-notebooklm-macos/

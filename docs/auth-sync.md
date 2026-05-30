@@ -1,7 +1,7 @@
 # Auth Sync
 
 KOReader NotebookLM can run normal NotebookLM requests directly on Kindle with
-the `lua-direct` backend. A Mac/PC is only needed occasionally to refresh Google
+its `lua-direct` runtime. A Mac/PC is only needed occasionally to refresh Google
 auth and copy the resulting auth bundle to the Kindle.
 
 ```text

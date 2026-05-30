@@ -113,14 +113,6 @@ function NotebookLM:addToMainMenu(menu_items)
                 end,
             },
             {
-                text_func = function()
-                    return _("Bridge URL: ") .. tostring(self.settings:read("bridge_url"))
-                end,
-                callback = function()
-                    self:showBridgeUrlDialog()
-                end,
-            },
-            {
                 text = _("Settings"),
                 sub_item_table = {
                     {
@@ -129,14 +121,6 @@ function NotebookLM:addToMainMenu(menu_items)
                         end,
                         callback = function()
                             self:toggleLanguage()
-                        end,
-                    },
-                    {
-                        text_func = function()
-                            return _("Backend: ") .. tostring(self.settings:read("backend"))
-                        end,
-                        callback = function()
-                            self:toggleBackend()
                         end,
                     },
                     {
@@ -197,38 +181,6 @@ function NotebookLM:addToMainMenu(menu_items)
             },
         },
     }
-end
-
-function NotebookLM:showBridgeUrlDialog()
-    local InputDialog = require("ui/widget/inputdialog")
-    local input_dialog
-    input_dialog = InputDialog:new{
-        title = _("NotebookLM bridge URL"),
-        input_hint = _("http://127.0.0.1:8765"),
-        input_type = "text",
-        input = self.settings:read("bridge_url"),
-        buttons = {
-            {
-                {
-                    text = _("Cancel"),
-                    callback = function()
-                        UIManager:close(input_dialog)
-                    end,
-                },
-                {
-                    text = _("Save"),
-                    callback = function()
-                        local url = input_dialog:getInputText()
-                        if url and url ~= "" then
-                            self.settings:write("bridge_url", url)
-                        end
-                        UIManager:close(input_dialog)
-                    end,
-                },
-            },
-        },
-    }
-    UIManager:show(input_dialog)
 end
 
 local function show_notice(text, timeout)
@@ -307,13 +259,6 @@ function NotebookLM:showLuaDirectNotebookDialog()
     UIManager:show(input_dialog)
 end
 
-function NotebookLM:toggleBackend()
-    local current = self.settings:read("backend")
-    local next_backend = current == "lua-direct" and "bridge" or "lua-direct"
-    self.settings:write("backend", next_backend)
-    show_notice("NotebookLM backend: " .. next_backend)
-end
-
 function NotebookLM:toggleLanguage()
     local current = self:_language()
     local next_language = current == "en" and "es" or "en"
@@ -322,11 +267,6 @@ function NotebookLM:toggleLanguage()
 end
 
 function NotebookLM:runLuaDirectSmoke()
-    if self.settings:read("backend") ~= "lua-direct" then
-        show_error("Set NotebookLM backend to lua-direct before running this smoke.")
-        return
-    end
-
     local ok_client, DirectClient = pcall(function()
         return require("direct.client")
     end)

@@ -73,8 +73,8 @@ or:
 scripts/sync-auth-to-kindle.sh --ssh <kindle-ip> --port 2222
 ```
 
-The sync script creates auth if needed, copies the bundle, and writes
-`notebooklm.lua` for `backend = "lua-direct"`.
+The sync script creates auth if needed, copies the bundle, and writes the
+KOReader NotebookLM settings file.
 
 Force a fresh login and sync:
 

@@ -32,6 +32,8 @@ from .rpc import (
     build_query_url,
 )
 
+UNKNOWN_SOURCE_ERROR_GRACE_SECONDS = 90.0
+
 
 class NotebookLMLiteClient:
     def __init__(
@@ -310,17 +312,31 @@ class NotebookLMLiteClient:
 
     def _wait_for_source_ready(self, notebook_id: str, source_id: str) -> dict[str, Any] | None:
         deadline = time.time() + self.upload_wait_seconds
+        first_unknown_error_at: float | None = None
         while time.time() < deadline:
+            now = time.time()
             for source in self.list_sources(notebook_id):
                 if source.get("id") == source_id:
                     status = source.get("status")
+                    source_type = source.get("source_type")
                     if status in (None, "ready"):
                         return source
-                    if status == "error":
+                    if status == "error" and isinstance(source_type, int) and source_type != 0:
                         raise NotebookLMRequestError(
                             "upload_failed",
                             "NotebookLM source processing failed.",
                         )
+                    if status == "error" and source_type == 0:
+                        if first_unknown_error_at is None:
+                            first_unknown_error_at = now
+                        if now - first_unknown_error_at >= UNKNOWN_SOURCE_ERROR_GRACE_SECONDS:
+                            raise NotebookLMRequestError(
+                                "upload_failed",
+                                "NotebookLM rejected or could not process this source. "
+                                "Try a different file or convert it to PDF/TXT before uploading.",
+                            )
+                    else:
+                        first_unknown_error_at = None
             time.sleep(3)
         raise NotebookLMRequestError("timeout", "NotebookLM source processing timed out.")
 

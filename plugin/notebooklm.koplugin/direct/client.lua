@@ -2,8 +2,27 @@ local AuthBundle = require("direct.auth_bundle")
 local Parsing = require("direct.parsing")
 local Rpc = require("direct.rpc")
 local Transport = require("direct.transport")
+local has_prompts, Prompts = pcall(require, "prompts")
 
 local DirectClient = {}
+
+local FALLBACK_ACCEPT_LANGUAGE = {
+    en = "en-US,en;q=0.9",
+    es = "es-ES,es;q=0.9",
+}
+
+local FALLBACK_LANGUAGE_INSTRUCTIONS = {
+    en = "Answer in English.",
+    es = "Responde en espanol.",
+}
+
+local DEFAULT_UPLOAD_WAIT_SECONDS = 600
+local UNKNOWN_SOURCE_ERROR_GRACE_SECONDS = 90
+
+
+local function trim(value)
+    return tostring(value or ""):gsub("^%s+", ""):gsub("%s+$", "")
+end
 
 function DirectClient:new(settings, http)
     return setmetatable({
@@ -14,7 +33,7 @@ function DirectClient:new(settings, http)
 end
 
 function DirectClient:is_enabled()
-    return self.settings and self.settings:read("backend") == "lua-direct"
+    return true
 end
 
 function DirectClient:load_auth()
@@ -24,12 +43,51 @@ function DirectClient:load_auth()
     return AuthBundle.load(self.settings:read("direct_auth_bundle_path"))
 end
 
+function DirectClient:language()
+    local language = self.settings and self.settings:read("language") or nil
+    if has_prompts and Prompts.normalize_language then
+        return Prompts.normalize_language(language)
+    end
+    language = tostring(language or "")
+    if language == "es" then
+        return "es"
+    end
+    return "en"
+end
+
+function DirectClient:accept_language(language)
+    language = language or self:language()
+    if has_prompts and Prompts.accept_language then
+        return Prompts.accept_language(language)
+    end
+    return FALLBACK_ACCEPT_LANGUAGE[language] or FALLBACK_ACCEPT_LANGUAGE.en
+end
+
+function DirectClient:response_language_instruction(language)
+    language = language or self:language()
+    if has_prompts and Prompts.response_language_instruction then
+        return Prompts.response_language_instruction(language)
+    end
+    return FALLBACK_LANGUAGE_INSTRUCTIONS[language] or FALLBACK_LANGUAGE_INSTRUCTIONS.en
+end
+
+function DirectClient:auth_for_request(auth)
+    local request_auth = {}
+    for key, value in pairs(auth or {}) do
+        request_auth[key] = value
+    end
+    request_auth.language = request_auth.language or self:language()
+    request_auth.accept_language = request_auth.accept_language or self:accept_language(request_auth.language)
+    return request_auth
+end
+
 function DirectClient:build_list_notebooks(auth)
     auth = auth or {}
     return {
         url = Rpc.build_batchexecute_url(auth.base_url or "https://notebooklm.google.com", Rpc.RPC_LIST_NOTEBOOKS, {
             build_label = auth.build_label,
             session_id = auth.session_id,
+            language = auth.language or self:language(),
         }),
         body = Rpc.build_batchexecute_body(Rpc.RPC_LIST_NOTEBOOKS, Rpc.params_list_notebooks(), auth.csrf_token),
     }
@@ -42,6 +100,7 @@ function DirectClient:build_get_notebook(auth, notebook_id)
             source_path = "/notebook/" .. tostring(notebook_id),
             build_label = auth.build_label,
             session_id = auth.session_id,
+            language = auth.language or self:language(),
         }),
         body = Rpc.build_batchexecute_body(Rpc.RPC_GET_NOTEBOOK, Rpc.params_get_notebook(notebook_id), auth.csrf_token),
     }
@@ -53,6 +112,7 @@ function DirectClient:build_create_notebook(auth, title)
         url = Rpc.build_batchexecute_url(auth.base_url or "https://notebooklm.google.com", Rpc.RPC_CREATE_NOTEBOOK, {
             build_label = auth.build_label,
             session_id = auth.session_id,
+            language = auth.language or self:language(),
         }),
         body = Rpc.build_batchexecute_body(Rpc.RPC_CREATE_NOTEBOOK, Rpc.params_create_notebook(title), auth.csrf_token),
     }
@@ -65,6 +125,7 @@ function DirectClient:build_register_file_source(auth, notebook_id, filename)
             source_path = "/notebook/" .. tostring(notebook_id),
             build_label = auth.build_label,
             session_id = auth.session_id,
+            language = auth.language or self:language(),
         }),
         body = Rpc.build_batchexecute_body(Rpc.RPC_ADD_SOURCE_FILE, Rpc.params_register_file_source(notebook_id, filename), auth.csrf_token),
     }
@@ -92,6 +153,7 @@ function DirectClient:build_ask(auth, request)
             build_label = auth.build_label,
             session_id = auth.session_id,
             request_id = self.request_id,
+            language = request.language or auth.language or self:language(),
         }),
         body = Rpc.build_query_body({
             source_ids = request.source_ids or {},
@@ -163,6 +225,7 @@ function DirectClient:list_notebooks()
     if not auth then
         return nil, auth_err
     end
+    auth = self:auth_for_request(auth)
     local request = self:build_list_notebooks(auth)
     local response_text, err = self.transport.post_form(request.url, request.body, auth, self:timeout())
     if not response_text then
@@ -180,6 +243,7 @@ function DirectClient:get_notebook(notebook_id)
     if not auth then
         return nil, auth_err
     end
+    auth = self:auth_for_request(auth)
     local request = self:build_get_notebook(auth, notebook_id)
     local response_text, err = self.transport.post_form(request.url, request.body, auth, self:timeout())
     if not response_text then
@@ -201,6 +265,7 @@ function DirectClient:create_notebook(title)
     if not auth then
         return nil, auth_err
     end
+    auth = self:auth_for_request(auth)
     local request = self:build_create_notebook(auth, title)
     local response_text, err = self.transport.post_form(request.url, request.body, auth, self:timeout())
     if not response_text then
@@ -226,6 +291,24 @@ local function source_file_size(file_path)
     return size
 end
 
+local function file_extension(path)
+    local ext = tostring(path or ""):match("%.([^%.%s/]+)$")
+    return ext and ext:lower() or ""
+end
+
+local function source_upload_filename(source)
+    source = source or {}
+    local title = source.title and tostring(source.title) or nil
+    if title and title ~= "" and title:match("%.[^%.%s/]+$") then
+        return title
+    end
+    local path_name = tostring(source.file_path or ""):match("([^/]+)$")
+    if path_name and path_name:match("%.[^%.%s/]+$") then
+        return path_name
+    end
+    return path_name or title or "source"
+end
+
 function DirectClient:register_file_source(auth, notebook_id, filename)
     local request = self:build_register_file_source(auth, notebook_id, filename)
     local response_text, err = self.transport.post_form(request.url, request.body, auth, self:timeout())
@@ -239,10 +322,21 @@ function DirectClient:register_file_source(auth, notebook_id, filename)
     return source_id
 end
 
-function DirectClient:wait_for_source_ready(notebook_id, source_id)
+local function is_terminal_source_error(source)
+    if source.status ~= "error" then
+        return false
+    end
+    local source_type = source.source_type
+    return type(source_type) == "number" and source_type ~= 0
+end
+
+function DirectClient:wait_for_source_ready(notebook_id, source_id, timeout, opts)
+    opts = opts or {}
     local ok_socket, socket = pcall(require, "socket")
-    local deadline = os.time() + self:timeout()
+    local deadline = os.time() + (timeout or math.max(self:timeout(), DEFAULT_UPLOAD_WAIT_SECONDS))
+    local first_unknown_error_at = nil
     repeat
+        local now = os.time()
         local notebook, err = self:get_notebook(notebook_id)
         if not notebook then
             return nil, err
@@ -252,8 +346,29 @@ function DirectClient:wait_for_source_ready(notebook_id, source_id)
                 if not source.status or source.status == "ready" then
                     return source
                 end
-                if source.status == "error" then
-                    return nil, "NotebookLM source processing failed."
+                if source.status == "error" and opts.fail_on_any_error then
+                    return nil, "NotebookLM source processing failed.", {
+                        terminal_source_error = true,
+                        source_status = source.status,
+                        source_status_code = source.status_code,
+                        source_type = source.source_type,
+                    }
+                end
+                if is_terminal_source_error(source) then
+                    return nil, "NotebookLM source processing failed.", {
+                        terminal_source_error = true,
+                        source_status = source.status,
+                        source_status_code = source.status_code,
+                        source_type = source.source_type,
+                    }
+                end
+                if source.status == "error" and source.source_type == 0 then
+                    first_unknown_error_at = first_unknown_error_at or now
+                    if now - first_unknown_error_at >= UNKNOWN_SOURCE_ERROR_GRACE_SECONDS then
+                        return nil, "NotebookLM rejected or could not process this source. Try a different file or convert it to PDF/TXT before uploading."
+                    end
+                else
+                    first_unknown_error_at = nil
                 end
             end
         end
@@ -278,13 +393,12 @@ function DirectClient:upload_source(notebook_id, source)
     if not auth then
         return nil, auth_err
     end
+    auth = self:auth_for_request(auth)
     local size, size_err = source_file_size(source.file_path)
     if not size then
         return nil, size_err
     end
-    local filename = source.title
-        or tostring(source.file_path):match("([^/]+)$")
-        or "source"
+    local filename = source_upload_filename(source)
     local source_id, register_err = self:register_file_source(auth, notebook_id, filename)
     if not source_id then
         return nil, register_err
@@ -318,9 +432,11 @@ function DirectClient:upload_source(notebook_id, source)
         adapter = "lua-direct",
     }
     if source.wait ~= false then
-        local ready, wait_err = self:wait_for_source_ready(notebook_id, source_id)
+        local ready, wait_err, wait_meta = self:wait_for_source_ready(notebook_id, source_id, source.wait_timeout, {
+            fail_on_any_error = source.fail_on_any_error,
+        })
         if not ready then
-            return nil, wait_err
+            return nil, wait_err, wait_meta
         end
         if ready.title then
             result.title = ready.title
@@ -365,6 +481,7 @@ function DirectClient:ask(request)
     if not auth then
         return nil, auth_err
     end
+    auth = self:auth_for_request(auth)
 
     local source_ids = request.source_ids
     if not source_ids then
@@ -416,6 +533,7 @@ function DirectClient:ask_async(request, callback)
         callback(nil, auth_err)
         return
     end
+    auth = self:auth_for_request(auth)
 
     local function send_ask(source_ids)
         local query = self:build_ask(auth, {
@@ -462,7 +580,16 @@ function DirectClient:ask_async(request, callback)
 end
 
 function DirectClient:build_question(request)
-    local parts = { tostring(request.prompt or ""):gsub("^%s+", ""):gsub("%s+$", "") }
+    local language = request.language or self:language()
+    local parts = {}
+    local instruction = trim(self:response_language_instruction(language))
+    if instruction ~= "" then
+        parts[#parts + 1] = instruction
+    end
+    local prompt = trim(request.prompt)
+    if prompt ~= "" then
+        parts[#parts + 1] = prompt
+    end
     local book = request.book
     if type(book) == "table" then
         local book_lines = {}
@@ -479,7 +606,7 @@ function DirectClient:build_question(request)
             parts[#parts + 1] = "Book context:\n" .. table.concat(book_lines, "\n")
         end
     end
-    parts[#parts + 1] = 'Selected passage:\n"""\n' .. tostring(request.selected_text or ""):gsub("^%s+", ""):gsub("%s+$", "") .. '\n"""'
+    parts[#parts + 1] = 'Selected passage:\n"""\n' .. trim(request.selected_text) .. '\n"""'
     return table.concat(parts, "\n\n")
 end
 

@@ -82,14 +82,70 @@ local settings = {
         if key == "timeout" then
             return payload.timeout or 120
         end
+        if key == "language" then
+            return payload.language or "en"
+        end
         return nil
     end,
 }
 
 local client = DirectClient:new(settings)
-local result, err = client:ask(payload.request or {})
+local action = payload.action or "ask"
+local request = payload.request or {}
+local result, err
+local err_meta
+
+if action == "ask" then
+    result, err = client:ask(request)
+elseif action == "create_upload" then
+    local title = request.title or "Untitled notebook"
+    local created
+    created, err = client:create_notebook(title)
+    if created and not err then
+        local notebook = created.notebook
+        if not notebook or not notebook.id then
+            err = "NotebookLM did not return a created notebook ID."
+        else
+            local upload = nil
+            if request.upload_after then
+                upload, err, err_meta = client:upload_source(notebook.id, {
+                    file_path = request.file_path,
+                    title = request.source_title,
+                    wait = request.wait ~= false,
+                    wait_timeout = request.wait_timeout,
+                    fail_on_any_error = request.fallback_file_path ~= nil,
+                })
+                if err and err_meta and err_meta.terminal_source_error and request.fallback_file_path then
+                    local primary_error = err
+                    upload, err, err_meta = client:upload_source(notebook.id, {
+                        file_path = request.fallback_file_path,
+                        title = request.fallback_source_title,
+                        wait = request.wait ~= false,
+                        wait_timeout = request.wait_timeout,
+                    })
+                    if upload and not err then
+                        upload.primary_failed = true
+                        upload.primary_error = primary_error
+                        upload.fallback_used = true
+                        upload.fallback_method = request.fallback_source_export_method
+                    end
+                end
+            end
+            if not err then
+                result = {
+                    notebook = notebook,
+                    upload = upload,
+                    adapter = "lua-direct",
+                }
+            end
+        end
+    end
+else
+    err = "Unknown NotebookLM worker action: " .. tostring(action)
+end
+
 if not result then
-    finish({ ok = false, error = tostring(err or "NotebookLM ask failed.") })
+    finish({ ok = false, error = tostring(err or "NotebookLM worker failed.") })
     os.exit(1)
 end
 

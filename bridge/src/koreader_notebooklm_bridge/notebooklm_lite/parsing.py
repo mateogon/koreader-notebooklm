@@ -126,6 +126,9 @@ def parse_sources_from_notebook(notebook_data: list[Any]) -> list[dict[str, Any]
             if status_code is not None:
                 parsed["status_code"] = status_code
                 parsed["status"] = _source_status_name(status_code)
+            source_type = _source_type(source)
+            if source_type is not None:
+                parsed["source_type"] = source_type
             sources.append(parsed)
     return sources
 
@@ -314,6 +317,12 @@ def _source_status_code(source: list[Any]) -> int | None:
     if len(source) <= 3 or not isinstance(source[3], list) or len(source[3]) <= 1:
         return None
     return source[3][1] if isinstance(source[3][1], int) else None
+
+
+def _source_type(source: list[Any]) -> int | None:
+    if len(source) <= 2 or not isinstance(source[2], list) or len(source[2]) <= 4:
+        return None
+    return source[2][4] if isinstance(source[2][4], int) else None
 
 
 def _source_status_name(status_code: int) -> str:

@@ -95,6 +95,15 @@ local function source_status_name(code)
     })[code] or "unknown"
 end
 
+local function source_type(source)
+    local metadata = type(source) == "table" and source[3] or nil
+    local source_type_code = type(metadata) == "table" and metadata[5] or nil
+    if type(source_type_code) == "number" then
+        return source_type_code
+    end
+    return nil
+end
+
 function Parsing.parse_sources_from_notebook(notebook_data)
     local sources_data = type(notebook_data) == "table" and notebook_data[2] or nil
     local sources = {}
@@ -113,6 +122,10 @@ function Parsing.parse_sources_from_notebook(notebook_data)
             if type(status_code) == "number" then
                 parsed.status_code = status_code
                 parsed.status = source_status_name(status_code)
+            end
+            local source_type_code = source_type(source)
+            if source_type_code ~= nil then
+                parsed.source_type = source_type_code
             end
             sources[#sources + 1] = parsed
         end

@@ -185,7 +185,6 @@ Write a minimal `notebooklm.lua` that preserves user-friendly defaults:
 
 ```lua
 return {
-    ["backend"] = "lua-direct",
     ["direct_auth_bundle_path"] = "/mnt/us/koreader/settings/notebooklm-auth-bundle.json",
     ["direct_notebook_id"] = "",
     ["enable_upload"] = true,
@@ -254,7 +253,7 @@ git diff --check
 ```text
 [ ] USB sync writes bundle/settings to mounted Kindle.
 [ ] SSH sync writes bundle/settings to live Kindle.
-[ ] KOReader sees backend=lua-direct.
+[ ] KOReader sees the synced auth bundle path.
 [ ] Lua direct smoke passes.
 [ ] Ask flow still works without bridge.
 ```

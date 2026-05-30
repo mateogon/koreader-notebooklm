@@ -162,7 +162,7 @@ Termux, or direct NotebookLM Lua.
 7. Add conversation history cache.
 8. Add create notebook.
 9. Add upload only after query/list/create are stable.
-10. Switch plugin backend behind `client.lua`, not inside UI code.
+10. Keep plugin UI on `lua-direct`; use the bridge only from development scripts.
 
 ## Regression Harness
 
@@ -205,13 +205,6 @@ It includes:
 - `client.lua`: minimal feature-flagged facade for list notebooks, get
   notebook, and ask.
 
-The bridge UX remains the default. The direct client reports enabled only when
-settings contain:
-
-```text
-backend = lua-direct
-```
-
 This direct path now performs live NotebookLM requests when the plugin backend is
 set to `lua-direct`. It intentionally does not implement Lua browser login. Auth
 is generated on Mac/Windows and synced to Kindle.
@@ -224,10 +217,9 @@ NotebookLM -> Settings -> Lua direct smoke
 
 To use it:
 
-1. Set `NotebookLM -> Settings -> Backend` to `lua-direct`.
-2. Set `Lua direct auth bundle` to an auth bundle path outside the repo.
-3. Optionally set `Lua direct notebook` to a real notebook ID.
-4. Run `Lua direct smoke`.
+1. Set `Lua direct auth bundle` to an auth bundle path outside the repo.
+2. Optionally set `Lua direct notebook` to a real notebook ID.
+3. Run `Lua direct smoke`.
 
 The smoke performs:
 
@@ -235,9 +227,8 @@ The smoke performs:
 list_notebooks -> get_notebook -> ask
 ```
 
-It is intentionally synchronous and debug-only. The normal selected-text UX
-still goes through the bridge unless this backend is explicitly enabled, and
-upload remains unsupported in Lua direct mode.
+It is intentionally synchronous and debug-only. The normal selected-text UX uses
+the same `lua-direct` runtime through a background worker when available.
 
 Run the Lua spike tests through the existing verifier:
 

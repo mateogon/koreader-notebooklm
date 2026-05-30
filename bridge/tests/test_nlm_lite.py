@@ -21,6 +21,7 @@ from koreader_notebooklm_bridge.notebooklm_lite.auth import (
     load_auth_bundle,
 )
 from koreader_notebooklm_bridge.notebooklm_lite.client import NotebookLMLiteClient
+from koreader_notebooklm_bridge.notebooklm_lite.errors import NotebookLMRequestError
 from koreader_notebooklm_bridge.notebooklm_lite.login import (
     default_auth_bundle_path,
     default_chrome_profile_dir,
@@ -338,6 +339,47 @@ def test_client_upload_file_uses_resumable_flow(tmp_path):
 
     assert response == {"id": "src-new", "title": "Readable Source"}
     assert len(calls) == 3
+
+
+def test_client_wait_keeps_polling_unknown_error_status(monkeypatch):
+    client = NotebookLMLiteClient(_auth_bundle(), upload_wait_seconds=10)
+    polls = iter(
+        [
+            [{"id": "src-new", "title": "book.epub", "status": "error", "source_type": 0}],
+            [{"id": "src-new", "title": "book.epub", "status": "ready", "source_type": 8}],
+        ]
+    )
+
+    monkeypatch.setattr(client, "list_sources", lambda _notebook_id: next(polls))
+    monkeypatch.setattr("time.sleep", lambda _seconds: None)
+
+    assert client._wait_for_source_ready("nb1", "src-new") == {
+        "id": "src-new",
+        "title": "book.epub",
+        "status": "ready",
+        "source_type": 8,
+    }
+
+
+def test_client_wait_fails_persistent_unknown_error_status(monkeypatch):
+    client = NotebookLMLiteClient(_auth_bundle(), upload_wait_seconds=200)
+    clock = {"now": 0.0}
+
+    monkeypatch.setattr(
+        client,
+        "list_sources",
+        lambda _notebook_id: [
+            {"id": "src-new", "title": "book.epub", "status": "error", "source_type": 0}
+        ],
+    )
+    monkeypatch.setattr("time.sleep", lambda _seconds: clock.update(now=95.0))
+    monkeypatch.setattr("time.time", lambda: clock["now"])
+
+    with pytest.raises(NotebookLMRequestError) as exc:
+        client._wait_for_source_ready("nb1", "src-new")
+
+    assert exc.value.info.kind == "upload_failed"
+    assert "could not process this source" in str(exc.value)
 
 
 def test_adapter_ask_maps_client_response(monkeypatch):

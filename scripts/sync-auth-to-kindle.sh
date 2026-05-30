@@ -193,7 +193,6 @@ settings_payload() {
   fi
   cat <<LUA
 return {
-    ["backend"] = "lua-direct",
     ["direct_auth_bundle_path"] = "${auth_path}",
 ${notebook_line}
     ["enable_upload"] = true,
@@ -261,9 +260,6 @@ fi
 
 log ""
 log "Auth sync complete."
-if [ "$CONFIGURE" = "1" ]; then
-  log "  KOReader backend: lua-direct"
-fi
 if [ "$SMOKE" = "1" ]; then
   log "Next check: open KOReader and run NotebookLM -> Settings -> Lua direct smoke."
 fi

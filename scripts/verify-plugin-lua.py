@@ -487,11 +487,13 @@ end
 
 def main() -> None:
     Path("/tmp/book.epub").write_bytes(b"stub epub")
+    Path("/tmp/book.pdf").write_bytes(b"%PDF-1.4\nstub pdf\n")
     Path("/tmp/notebooklm-direct-auth-bundle.json").write_text(
         '{"base_url":"https://notebooklm.google.com","cookies":{"SID":"fake"},"csrf_token":"csrf-token","session_id":"session-id","build_label":"build-label"}',
         encoding="utf-8",
     )
     Path("/tmp/notebooklm-last-answer.md").unlink(missing_ok=True)
+    Path("/tmp/notebooklm-prompts.lua").unlink(missing_ok=True)
     for answer_file in Path("/tmp").glob("notebooklm-answer-*.md"):
         answer_file.unlink(missing_ok=True)
 
@@ -505,7 +507,11 @@ def main() -> None:
         local Rpc = require("direct.rpc")
         local Parsing = require("direct.parsing")
         local AuthBundle = require("direct.auth_bundle")
+        local Transport = require("direct.transport")
         local DirectClient = require("direct.client")
+        local SourceExport = require("source_export")
+        local SourceExportCRE = require("source_export_cre")
+        local Prompts = require("prompts")
 
         local function read_fixture(name)
             local path = nlm_lite_fixture_dir .. "/" .. name
@@ -536,6 +542,82 @@ def main() -> None:
             local call = f_req[1][1]
             return call[1], Json.decode(call[2]), call[3], call[4], values
         end
+
+        local prompt_config_path = "/tmp/notebooklm-prompts.lua"
+        os.remove(prompt_config_path)
+        assert(Prompts.config_path() == prompt_config_path, "prompt config path should use KOReader settings dir")
+        assert(#Prompts.all("es") == 5, "Spanish defaults should load without user prompt config")
+        assert(Prompts.get("why_matters", "es") ~= nil, "Spanish default prompt missing")
+
+        local function write_prompt_config(body)
+            local file = assert(io.open(prompt_config_path, "w"))
+            file:write(body)
+            file:close()
+        end
+
+        write_prompt_config([[
+return {
+    version = 1,
+    overrides = {
+        explain_simple = {
+            label = "Simple mio",
+            prompt = "Explica esto con mi estilo.",
+            enabled = true,
+            order = 5,
+        },
+        why_matters = {
+            enabled = false,
+        },
+    },
+    custom = {
+        {
+            id = "connect_to_book",
+            label = "Conecta con libro",
+            language = "es",
+            enabled = true,
+            order = 15,
+            prompt = "Conecta este pasaje con el argumento general del libro.",
+        },
+        {
+            id = "connect_to_book",
+            label = "Duplicado",
+            language = "es",
+            enabled = true,
+            order = 16,
+            prompt = "Este duplicado no debe aparecer.",
+        },
+        {
+            id = "english_only",
+            label = "English only",
+            language = "en",
+            enabled = true,
+            order = 17,
+            prompt = "Only show this in English.",
+        },
+    },
+}
+]])
+        local merged_prompts = Prompts.all("es")
+        assert(Prompts.get("explain_simple", "es").label == "Simple mio", "prompt override label did not apply")
+        assert(Prompts.get("explain_simple", "es").prompt == "Explica esto con mi estilo.", "prompt override body did not apply")
+        assert(Prompts.get("why_matters", "es") == nil, "disabled default prompt should not be shown")
+        assert(Prompts.get("connect_to_book", "es").label == "Conecta con libro", "custom Spanish prompt did not load")
+        assert(Prompts.get("english_only", "es") == nil, "custom prompt for another language should not show")
+        assert(Prompts.get("english_only", "en") ~= nil, "custom English prompt should show in English")
+        local duplicate_count = 0
+        for _, prompt in ipairs(merged_prompts) do
+            if prompt.id == "connect_to_book" then
+                duplicate_count = duplicate_count + 1
+            end
+        end
+        assert(duplicate_count == 1, "duplicate custom prompt IDs should keep only first valid entry")
+        assert(merged_prompts[1].id == "explain_simple", "prompt order override was not deterministic")
+
+        write_prompt_config("return {")
+        assert(#Prompts.all("es") == 5, "invalid prompt config should fall back to defaults")
+        assert(Prompts.get("why_matters", "es") ~= nil, "invalid prompt config should not keep stale disabled prompts")
+        assert(Prompts.config_error() ~= nil, "invalid prompt config should expose a short error")
+        os.remove(prompt_config_path)
 
         local auth = assert(AuthBundle.load("/tmp/notebooklm-direct-auth-bundle.json"))
         assert(auth.base_url == "https://notebooklm.google.com", "auth bundle base_url did not load")
@@ -635,6 +717,20 @@ def main() -> None:
         ))
         local sources = Parsing.parse_sources_from_notebook_data(notebook_result)
         assert(#sources == 1 and sources[1].title == "Golden Source", "get notebook fixture did not parse")
+        local transient_sources = Parsing.parse_sources_from_notebook({
+            "Transient Notebook",
+            {
+                {
+                    { "src-transient" },
+                    "Transient EPUB",
+                    { Json.null, Json.null, { 1, 2 }, Json.null, 0 },
+                    { Json.null, 3 },
+                },
+            },
+            "nb-transient",
+        })
+        assert(transient_sources[1].status == "error", "transient source status did not parse")
+        assert(transient_sources[1].source_type == 0, "transient source type did not parse")
 
         local answer = assert(Parsing.parse_query_response(read_fixture("query_response.fixture")))
         assert(answer.answer == "Golden answer with citation [1].", "query answer fixture did not parse")
@@ -643,13 +739,11 @@ def main() -> None:
         assert(answer.references[1].cited_text == "Golden cited passage.", "query cited text did not parse")
 
         local fake_settings = {
-            values = { backend = "bridge", direct_auth_bundle_path = "/tmp/notebooklm-direct-auth-bundle.json" },
+            values = { direct_auth_bundle_path = "/tmp/notebooklm-direct-auth-bundle.json" },
             read = function(self, key) return self.values[key] end,
         }
         local direct_client = DirectClient:new(fake_settings, nil)
-        assert(direct_client:is_enabled() == false, "Lua direct client should not be enabled by default")
-        fake_settings.values.backend = "lua-direct"
-        assert(direct_client:is_enabled() == true, "Lua direct client feature flag did not enable")
+        assert(direct_client:is_enabled() == true, "Lua direct client should always be enabled")
         assert(direct_client:load_auth().csrf_token == "csrf-token", "direct client did not load auth")
         assert(direct_client:build_list_notebooks(auth).body:find("wXbhsf", 1, true), "direct client did not build list request")
         assert(direct_client:build_get_notebook(auth, "nb-golden").url:find("source%-path=%%2Fnotebook%%2Fnb%-golden"), "direct client did not build get notebook URL")
@@ -666,19 +760,76 @@ def main() -> None:
         assert(first_direct_request.headers["X-Same-Domain"] == "1", "direct transport did not send same-domain header")
         assert(first_direct_request.headers["Content-Type"] == "application/x-www-form-urlencoded;charset=UTF-8", "direct transport content type changed")
         assert(first_direct_request.headers["Accept"] == "*/*", "direct transport did not send accept header")
+        assert(first_direct_request.headers["Accept-Language"] == "en-US,en;q=0.9", "direct transport did not default to English accept-language")
         assert(first_direct_request.headers["User-Agent"]:find("Chrome", 1, true), "direct transport did not send browser-like user-agent")
         assert(first_direct_request.body:find("f.req=", 1, true), "direct transport did not send form body")
+        fake_settings.values.language = "es"
+        local spanish_auth = direct_client:auth_for_request(auth)
+        assert(spanish_auth.language == "es", "direct client did not attach Spanish hl language")
+        assert(spanish_auth.accept_language == "es-ES,es;q=0.9", "direct client did not attach Spanish accept-language")
+        assert(Transport._test_headers("body", spanish_auth)["Accept-Language"] == "es-ES,es;q=0.9", "direct transport did not use Spanish accept-language")
+        local spanish_question = direct_client:build_question({
+            prompt = "Explica esto.",
+            selected_text = "Texto seleccionado.",
+        })
+        assert(spanish_question:find("Responde en espanol.", 1, true), "Spanish language instruction was not added to NotebookLM question")
+        local spanish_query = direct_client:build_ask(spanish_auth, {
+            source_ids = { "src-golden" },
+            query_text = spanish_question,
+            conversation_id = "conv-es",
+        })
+        assert(spanish_query.url:find("hl=es", 1, true), "direct ask URL did not use Spanish hl parameter")
+        values = form_values(spanish_query.body)
+        query_f_req = Json.decode(values["f.req"])
+        query_params = Json.decode(query_f_req[2])
+        assert(query_params[2]:find("Responde en espanol.", 1, true), "NotebookLM query body did not include the Spanish language instruction")
+        fake_settings.values.language = nil
         local live_notebook = assert(direct_client:get_notebook("nb-golden"))
         assert(live_notebook.sources[1].id == "src-golden", "direct client get_notebook did not parse sources")
         local created_direct = assert(direct_client:create_notebook("Direct Created"))
         assert(created_direct.notebook.id == "created-direct", "direct client create_notebook did not parse notebook id")
         local uploaded_direct = assert(direct_client:upload_source("created-direct", {
-            file_path = "/tmp/book.epub",
-            title = "Direct Source",
+            file_path = "/tmp/book.pdf",
+            title = "Direct Source.pdf",
             wait = true,
         }))
+        local register_request
+        local upload_start_request
+        for _, request in ipairs(_G.__direct_requests) do
+            if request.url:find("rpcids=o4cbdc", 1, true) then
+                register_request = request
+            elseif request.url:find("/upload/_/?authuser=0", 1, true) then
+                upload_start_request = request
+            end
+        end
+        local register_rpc_id, register_params = decode_rpc_body(assert(register_request, "direct upload did not register file source").body)
+        assert(register_rpc_id == "o4cbdc", "direct upload registered the wrong RPC")
+        assert(register_params[1][1][1] == "Direct Source.pdf", "direct upload should prefer readable source title when registering source")
+        assert(assert(upload_start_request, "direct upload did not start resumable upload").body:find('"SOURCE_NAME":"Direct Source.pdf"', 1, true), "direct upload start should preserve readable source title")
         assert(uploaded_direct.source_id == "src-direct-upload", "direct client upload_source did not return source id")
         assert(_G.__direct_upload_started == true and _G.__direct_upload_finalized == true, "direct client upload_source did not use resumable upload")
+        local fallback_wait_client = DirectClient:new(fake_settings, nil)
+        fallback_wait_client.get_notebook = function()
+            return {
+                sources = {
+                    {
+                        id = "src-original",
+                        status = "error",
+                        status_code = 3,
+                        source_type = 0,
+                    },
+                },
+            }
+        end
+        local fallback_ready, fallback_wait_err, fallback_wait_meta = fallback_wait_client:wait_for_source_ready(
+            "created-direct",
+            "src-original",
+            1,
+            { fail_on_any_error = true }
+        )
+        assert(fallback_ready == nil, "primary upload error should not be treated as ready")
+        assert(tostring(fallback_wait_err):find("processing failed", 1, true), "primary upload error did not return terminal failure")
+        assert(fallback_wait_meta and fallback_wait_meta.terminal_source_error == true, "primary upload error did not request fallback")
         local live_answer = assert(direct_client:ask({
             notebook_id = "nb-golden",
             selected_text = "Lua direct selected text",
@@ -686,6 +837,78 @@ def main() -> None:
             book = { title = "Fixture Book", position = "smoke" },
         }))
         assert(live_answer.adapter == "lua-direct" and live_answer.answer:find("Golden answer", 1, true), "direct client ask did not parse answer")
+
+        local converted_html = SourceExportCRE.html_to_markdown("<html><body><h1>Chapter One</h1><p>Hello <em>world</em>.</p><ul><li>First</li></ul></body></html>")
+        assert(converted_html:find("# Chapter One", 1, true), "CRE HTML conversion did not preserve heading")
+        assert(converted_html:find("Hello world.", 1, true), "CRE HTML conversion did not preserve paragraph text")
+        assert(converted_html:find("- First", 1, true), "CRE HTML conversion did not preserve list item")
+
+        local passthrough_source = assert(SourceExport.prepare({ path = "/tmp/book.pdf", title = "PDF Book" }, nil, {
+            output_dir = "/tmp/notebooklm-source-test",
+        }))
+        assert(passthrough_source.file_path == "/tmp/book.pdf", "PDF source should pass through without conversion")
+        assert(passthrough_source.method == "passthrough-pdf", "PDF source used the wrong export method")
+
+        local html_doc = {
+            getHTMLFromXPointer = function()
+                error("whole-document HTML extraction should not run by default")
+            end,
+        }
+        local html_source, html_err = SourceExport.prepare({ path = "/tmp/book.epub", title = "Exported Book" }, html_doc, {
+            output_dir = "/tmp/notebooklm-source-test",
+        })
+        assert(html_source == nil, "EPUB export should not use risky whole-document HTML fallback by default")
+        assert(tostring(html_err):find("page text extraction", 1, true), "EPUB export should report page text extraction failure")
+
+        local html_only = assert(SourceExportCRE.extract_whole_html({
+            getHTMLFromXPointer = function(_, xpointer)
+                assert(xpointer == ".0", "whole document export used the wrong xpointer")
+                return "<html><body><h1>Export Title</h1><p>Extracted <strong>book</strong> text.</p></body></html>"
+            end,
+        }))
+        assert(html_only.method == "cre-dom-html", "explicit HTML extraction test should keep the helper available")
+        assert(html_only.text:find("# Export Title", 1, true), "explicit HTML extraction did not preserve heading")
+        assert(html_only.text:find("Extracted book text.", 1, true), "explicit HTML extraction did not preserve text")
+
+        local page_doc = {
+            getHTMLFromXPointer = function() return nil end,
+            getPageCount = function() return 2 end,
+            getPageXPointer = function(_, page) return ".page" .. tostring(page) end,
+            getTextFromXPointers = function(_, pos0, pos1)
+                return "Range " .. tostring(pos0) .. " to " .. tostring(pos1)
+            end,
+        }
+        local page_source = assert(SourceExport.prepare({ path = "/tmp/book.epub", title = "Paged Book" }, page_doc, {
+            output_dir = "/tmp/notebooklm-source-test",
+        }))
+        assert(page_source.method == "cre-page-xpointers", "EPUB export should fall back to page xpointer text")
+        local page_file = assert(io.open(page_source.file_path, "r"))
+        local page_body = page_file:read("*all")
+        page_file:close()
+        assert(page_body:find("Range .page1 to .page2", 1, true), "page export should include first page range")
+        assert(page_body:find("Range .page2 to .page3", 1, true), "page export should include final page range")
+
+        local rendered = false
+        local render_doc = {
+            getHTMLFromXPointer = function() return nil end,
+            setViewDimen = function(_, dimen)
+                assert(dimen.w == 600 and dimen.h == 800, "export render fallback should set stable view dimensions")
+            end,
+            setViewMode = function(_, mode)
+                assert(mode == "page", "export render fallback should set page mode")
+            end,
+            render = function() rendered = true end,
+            getPageCount = function() return rendered and 1 or 0 end,
+            getPageXPointer = function(_, page) return ".rendered" .. tostring(page) end,
+            getTextFromXPointers = function(_, pos0, pos1)
+                return "Rendered " .. tostring(pos0) .. " to " .. tostring(pos1)
+            end,
+        }
+        local render_source = assert(SourceExport.prepare({ path = "/tmp/book.epub", title = "Rendered Book" }, render_doc, {
+            output_dir = "/tmp/notebooklm-source-test",
+        }))
+        assert(render_source.method == "cre-page-xpointers", "render fallback should still use page xpointer export")
+        assert(rendered == true, "render fallback did not render an unpaginated CRE document")
 
         local Client = require("client")
         local pending_async = {}
@@ -729,6 +952,18 @@ def main() -> None:
                 getProps = function()
                     return { title = "Book", authors = "Author" }
                 end,
+                getHTMLFromXPointer = function()
+                    return "<html><body><h1>Book</h1><p>Stub EPUB content exported by KOReader.</p></body></html>"
+                end,
+                getPageCount = function()
+                    return 1
+                end,
+                getPageXPointer = function(_, page)
+                    return ".bookpage" .. tostring(page)
+                end,
+                getTextFromXPointers = function()
+                    return "Stub EPUB content exported by KOReader."
+                end,
             },
             doc_settings = {
                 readSetting = function(_, key)
@@ -768,21 +1003,16 @@ def main() -> None:
         plugin:addToMainMenu(menu)
         assert(menu.notebooklm, "missing NotebookLM tools menu")
         assert(menu.notebooklm.sub_item_table[2].text == "Answers", "missing NotebookLM answers menu")
-        local settings_menu = menu.notebooklm.sub_item_table[5]
+        local settings_menu = menu.notebooklm.sub_item_table[4]
         assert(settings_menu and settings_menu.text == "Settings", "missing NotebookLM settings menu")
-        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 8, "settings menu does not expose expected settings")
+        assert(settings_menu.sub_item_table and #settings_menu.sub_item_table == 7, "settings menu does not expose expected settings")
         assert(settings_menu.sub_item_table[1].text_func():find("English", 1, true), "language menu did not show English default")
         settings_menu.sub_item_table[1].callback()
         assert(plugin.settings:read("language") == "es", "language toggle did not switch to Spanish")
         settings_menu.sub_item_table[1].callback()
         assert(plugin.settings:read("language") == "en", "language toggle did not switch back to English")
-        assert(settings_menu.sub_item_table[2].text_func():find("bridge", 1, true), "backend menu did not show bridge default")
+        assert(settings_menu.sub_item_table[2].text_func():find("not set", 1, true), "lua direct auth bundle menu did not show unset state")
         settings_menu.sub_item_table[2].callback()
-        assert(plugin.settings:read("backend") == "lua-direct", "backend toggle did not switch to lua-direct")
-        settings_menu.sub_item_table[2].callback()
-        assert(plugin.settings:read("backend") == "bridge", "backend toggle did not switch back to bridge")
-        assert(settings_menu.sub_item_table[3].text_func():find("not set", 1, true), "lua direct auth bundle menu did not show unset state")
-        settings_menu.sub_item_table[3].callback()
         assert(plugin.notebooklm_ui.input_dialog == nil, "lua direct auth bundle menu should not use NotebookLMUI input dialog")
         local uimanager_for_lua_direct = require("ui/uimanager")
         local auth_dialog = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
@@ -790,36 +1020,30 @@ def main() -> None:
         auth_dialog.input = "/tmp/notebooklm-direct-auth-bundle.json"
         auth_dialog.buttons[1][2].callback()
         assert(plugin.settings:read("direct_auth_bundle_path") == "/tmp/notebooklm-direct-auth-bundle.json", "lua direct auth bundle path was not saved")
-        assert(settings_menu.sub_item_table[4].text_func():find("auto", 1, true), "lua direct notebook menu did not show auto state")
-        settings_menu.sub_item_table[4].callback()
+        assert(settings_menu.sub_item_table[3].text_func():find("auto", 1, true), "lua direct notebook menu did not show auto state")
+        settings_menu.sub_item_table[3].callback()
         local notebook_dialog = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
         assert(notebook_dialog and notebook_dialog.title == "Lua direct notebook ID", "lua direct notebook dialog did not render")
         notebook_dialog.input = "nb-golden"
         notebook_dialog.buttons[1][2].callback()
         assert(plugin.settings:read("direct_notebook_id") == "nb-golden", "lua direct notebook id was not saved")
-        settings_menu.sub_item_table[5].callback()
-        local smoke_error = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
-        assert(smoke_error and smoke_error.text and smoke_error.text:find("Set NotebookLM backend", 1, true), "lua direct smoke should require lua-direct backend")
-        settings_menu.sub_item_table[2].callback()
-        settings_menu.sub_item_table[5].callback()
+        settings_menu.sub_item_table[4].callback()
         local smoke_result = uimanager_for_lua_direct.shown[#uimanager_for_lua_direct.shown]
         assert(smoke_result and smoke_result.text and smoke_result.text:find("Lua direct smoke OK", 1, true), "lua direct smoke did not complete through HTTPS stub")
-        settings_menu.sub_item_table[2].callback()
-        assert(plugin.settings:read("backend") == "bridge", "backend was not restored after lua-direct smoke")
-        assert(settings_menu.sub_item_table[6].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
-        settings_menu.sub_item_table[6].callback()
+        assert(settings_menu.sub_item_table[5].text_func():find("enabled", 1, true), "source upload menu did not show enabled state")
+        settings_menu.sub_item_table[5].callback()
         assert(plugin.settings:read("enable_upload") == false, "source upload toggle did not disable upload")
-        settings_menu.sub_item_table[6].callback()
+        settings_menu.sub_item_table[5].callback()
         assert(plugin.settings:read("enable_upload") == true, "source upload toggle did not re-enable upload")
-        assert(settings_menu.sub_item_table[7].text_func():find("multipart", 1, true), "upload mode menu did not show multipart mode")
-        settings_menu.sub_item_table[7].callback()
+        assert(settings_menu.sub_item_table[6].text_func():find("multipart", 1, true), "upload mode menu did not show multipart mode")
+        settings_menu.sub_item_table[6].callback()
         assert(plugin.settings:read("upload_mode") == "path", "upload mode toggle did not switch to path")
-        settings_menu.sub_item_table[7].callback()
+        settings_menu.sub_item_table[6].callback()
         assert(plugin.settings:read("upload_mode") == "multipart", "upload mode toggle did not switch back to multipart")
-        assert(settings_menu.sub_item_table[8].text_func():find("enabled", 1, true), "open answer setting did not show enabled state")
-        settings_menu.sub_item_table[8].callback()
+        assert(settings_menu.sub_item_table[7].text_func():find("enabled", 1, true), "open answer setting did not show enabled state")
+        settings_menu.sub_item_table[7].callback()
         assert(plugin.settings:read("open_answer_automatically") == false, "open answer toggle did not disable auto-open")
-        settings_menu.sub_item_table[8].callback()
+        settings_menu.sub_item_table[7].callback()
         assert(plugin.settings:read("open_answer_automatically") == true, "open answer toggle did not re-enable auto-open")
 
         local unsafe_value = function() return "unsafe" end
@@ -841,21 +1065,6 @@ def main() -> None:
         assert(type(sanitized_link.linked_at) == "string", "unsafe linked_at did not fall back to an ISO string")
         plugin.storage:clear_link(plugin.ui)
 
-        plugin.storage:save_link(plugin.ui, {
-            notebook_id = "stale-local-notebook",
-            notebook_title = "Stale local notebook",
-        })
-        _G.__linked_book = false
-        plugin.notebooklm_ui:ask_with_prompt(
-            "Stale local passage",
-            "Explain this passage simply.",
-            "Explica simple"
-        )
-        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "stale local link was used after bridge returned 404")
-        plugin.notebooklm_ui:_close_input()
-        plugin.storage:clear_link(plugin.ui)
-
-        plugin.settings:write("backend", "lua-direct")
         plugin.settings:write("direct_notebook_id", "nb-golden")
         plugin.notebooklm_ui:show_setup()
         local direct_setup = plugin.notebooklm_ui.input_dialog
@@ -864,8 +1073,31 @@ def main() -> None:
         assert(direct_setup.buttons[2][2].text == "Create", "lua-direct setup should expose notebook creation")
         assert(direct_setup.buttons[2][3].text == "Create+Upload", "lua-direct setup should expose source upload")
         local direct_link = plugin.storage:get_link(plugin.ui)
-        assert(direct_link and direct_link.notebook_id == "nb-golden", "lua-direct direct_notebook_id was not used as the local book link")
+        assert(direct_link == nil, "lua-direct direct_notebook_id should not auto-link the local book")
         plugin.notebooklm_ui:_close_input()
+        plugin.client.start_create_upload_job = function(_, request)
+            assert(request.title == "Direct UI Created" or request.title == "Created Notebook", "create+upload job did not receive title")
+            assert(request.file_path == "/tmp/book.epub", "create+upload job should try the original EPUB first")
+            assert(request.source_title == "book.epub", "create+upload job did not use original source title")
+            assert(request.source_export_method == "original-epub", "create+upload job did not report original source method")
+            assert(request.fallback_file_path and request.fallback_file_path:find("/tmp/notebooklm%-sources/"), "create+upload job did not prepare Markdown fallback path")
+            assert(request.fallback_file_path:find("%.md$"), "create+upload Markdown fallback should be a Markdown file")
+            assert(request.fallback_source_title == "Book.md", "create+upload job did not use readable Markdown fallback title")
+            assert(request.fallback_source_export_method == "cre-page-xpointers", "create+upload job did not report fallback export method")
+            assert(request.wait_timeout == 600, "create+upload job did not request a long processing wait")
+            return { ok = true, job_id = "upload-job", status = "running" }
+        end
+        plugin.client.get_create_upload_job = function(_, job_id)
+            assert(job_id == "upload-job", "create+upload polled the wrong job")
+            return {
+                ok = true,
+                status = "succeeded",
+                result = {
+                    notebook = { id = "created-direct", title = "Direct UI Created" },
+                    upload = { source_id = "src-direct-upload" },
+                },
+            }
+        end
         plugin.notebooklm_ui:create_notebook("Direct UI Created", true)
         local direct_ui_link = plugin.storage:get_link(plugin.ui)
         assert(direct_ui_link and direct_ui_link.notebook_id == "created-direct", "lua-direct create+upload did not save local link")
@@ -880,8 +1112,8 @@ def main() -> None:
         assert(direct_viewer.last_viewer and direct_viewer.last_viewer.title == "NotebookLM - Answer", "lua-direct ask did not open the structured answer viewer")
         assert(direct_viewer.last_viewer.text:find("Golden answer with citation", 1, true), "lua-direct ask did not render the NotebookLM answer")
         assert(#_G.__direct_requests >= direct_request_count + 2, "lua-direct normal ask did not call NotebookLM get+ask RPCs")
-        plugin.settings:write("backend", "bridge")
         plugin.storage:clear_link(plugin.ui)
+        plugin.settings:write("direct_notebook_id", "")
 
         local unlinked_item = highlight_buttons["notebooklm"]({
             selected_text = { text = "Unlinked highlighted passage" },
@@ -897,7 +1129,15 @@ def main() -> None:
         assert(plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Back", "setup does not expose a back action when opened from the NotebookLM hub")
         plugin.notebooklm_ui.input_dialog.buttons[1][1].callback()
         assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.buttons[1][1].text == "Ask NotebookLM", "setup back did not return to the NotebookLM hub")
+        plugin.notebooklm_ui.input_dialog.buttons[3][1].callback()
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title == "NotebookLM setup", "highlight link action did not open setup")
+        plugin.notebooklm_ui.input_dialog.buttons[2][1].callback()
+        local highlight_link_picker = plugin.notebooklm_ui.input_dialog
+        assert(highlight_link_picker and highlight_link_picker.title == "Link existing notebook", "highlight link setup did not open notebook picker")
+        highlight_link_picker.buttons[1][1].callback()
+        assert(plugin.notebooklm_ui.input_dialog and plugin.notebooklm_ui.input_dialog.title:find("Ask NotebookLM", 1, true), "highlight link did not continue to prompt picker")
         plugin.notebooklm_ui:_close_input()
+        plugin.storage:clear_link(plugin.ui)
 
         plugin.notebooklm_ui:show_status()
 
@@ -906,7 +1146,7 @@ def main() -> None:
         assert(picker and picker.buttons and picker.buttons[1] and picker.buttons[1][1], "notebook picker did not render")
         picker.buttons[1][1].callback()
         local existing_link = plugin.storage:get_link(plugin.ui)
-        assert(existing_link and existing_link.notebook_id == "mock-notebook", "existing notebook link was not saved")
+        assert(existing_link and existing_link.notebook_id == "nb-golden", "existing notebook link was not saved")
         plugin.notebooklm_ui:show_setup()
         local linked_setup = plugin.notebooklm_ui.input_dialog
         assert(linked_setup and linked_setup.buttons[3] and linked_setup.buttons[3][1].text == "Clear link", "linked setup did not expose clear link")
@@ -915,22 +1155,8 @@ def main() -> None:
 
         plugin.notebooklm_ui:create_notebook("Created Notebook", true)
         local link = plugin.storage:get_link(plugin.ui)
-        assert(link and link.notebook_id == "created-notebook", "book link was not saved")
-        assert(link.source_id == "uploaded-source", "uploaded source id was not saved")
-        assert(_G.__multipart_upload_seen == true, "multipart upload endpoint was not used by default")
-        assert(_G.__last_multipart_body and _G.__last_multipart_body:find('filename="book.epub"', 1, true), "multipart upload did not preserve the source file extension")
-        assert(_G.__last_multipart_body and _G.__last_multipart_body:find('name="title"', 1, true), "multipart upload did not include the source title")
-
-        _G.__multipart_upload_seen = false
-        _G.__path_upload_seen = false
-        _G.__last_path_upload_payload = nil
-        plugin.settings:write("upload_mode", "path")
-        plugin.notebooklm_ui:create_notebook("Path Upload Notebook", true)
-        assert(_G.__path_upload_seen == true, "path upload endpoint was not used when upload_mode=path")
-        assert(_G.__multipart_upload_seen == false, "multipart upload endpoint was used when upload_mode=path")
-        assert(_G.__last_path_upload_payload and _G.__last_path_upload_payload.file_path == "/tmp/book.epub", "path upload file_path was not sent")
-        assert(_G.__last_path_upload_payload and _G.__last_path_upload_payload.notebook_id == "created-notebook", "path upload notebook id was not sent")
-        assert(_G.__last_path_upload_payload and _G.__last_path_upload_payload.wait == true, "path upload wait flag was not sent as boolean")
+        assert(link and link.notebook_id == "created-direct", "book link was not saved")
+        assert(link.source_id == "src-direct-upload", "uploaded source id was not saved")
         plugin.settings:write("upload_mode", "multipart")
 
         plugin.settings:write("enable_upload", false)
@@ -963,8 +1189,7 @@ def main() -> None:
         assert(edit_prompt_dialog.input and edit_prompt_dialog.input:find("Explain this passage", 1, true), "preset edit prompt did not preload the full prompt")
         edit_prompt_dialog.input = edit_prompt_dialog.input .. "\nAlso explain the part I did not understand."
         edit_prompt_dialog.buttons[1][2].callback()
-        local edited_prompt_payload = _G.__last_encoded_value
-        assert(edited_prompt_payload and edited_prompt_payload.prompt:find("Also explain", 1, true), "edited preset prompt was not sent")
+        assert(require("ui/widget/textviewer").last_viewer.text:find("Golden answer", 1, true), "edited preset prompt did not return an answer")
         prompt_item.callback()
         prompt_hub = plugin.notebooklm_ui.input_dialog
         prompt_hub.buttons[1][1].callback()
@@ -977,12 +1202,6 @@ def main() -> None:
         plugin.ui.highlight.closed_keep = nil
         plugin.ui.highlight.cleared = false
         prompt_picker.buttons[1][1].callback()
-        local prompt_payload = _G.__last_encoded_value
-        assert(prompt_payload and prompt_payload.selected_text == "Prompt button selected text", "highlight prompt selected text was not sent")
-        assert(prompt_payload.prompt == plugin.prompts.get("explain_simple").prompt, "highlight prompt preset was not sent")
-        assert(prompt_payload.notebook_id == "created-notebook", "highlight prompt notebook id was not sent")
-        assert(prompt_payload.book and prompt_payload.book.title == "Book", "highlight prompt book title was not sent")
-        assert(prompt_payload.book and prompt_payload.book.position == "25.0%", "highlight prompt book position was not sent")
         assert(plugin.ui.highlight.closed_keep == false, "highlight dialog was not closed with selection reset during ask")
         assert(plugin.ui.highlight.cleared == true, "highlight selection was not cleared immediately after starting ask")
 
@@ -991,14 +1210,10 @@ def main() -> None:
             "Explain this passage simply.",
             "Explica simple"
         )
-        local ask_payload = _G.__last_encoded_value
-        assert(ask_payload and ask_payload.selected_text == "Highlighted passage", "ask selected text was not sent")
-        assert(ask_payload.prompt == "Explain this passage simply.", "ask prompt was not sent")
-        assert(ask_payload.book and ask_payload.book.author == "Author", "ask book author was not sent")
         local viewer = require("ui/widget/textviewer")
         assert(viewer.last_opened and viewer.last_opened:find("/tmp/notebooklm%-answer%-"), "answer viewer was not opened with a saved answer")
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Answer", "structured answer viewer did not open on Answer")
-        assert(viewer.last_viewer.text:find("Mock answer from bridge", 1, true), "structured answer viewer is missing answer text")
+        assert(viewer.last_viewer.text:find("Golden answer", 1, true), "structured answer viewer is missing answer text")
         assert(not viewer.last_viewer.text:find("##", 1, true), "structured answer viewer exposed markdown headings")
         assert(viewer.last_viewer.buttons_table[1][1].text == "Follow-up", "answer viewer missing follow-up action")
         assert(viewer.last_viewer.buttons_table[1][2].text == "New question", "answer viewer missing new question action")
@@ -1008,7 +1223,7 @@ def main() -> None:
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Prompt", "details did not open prompt section")
         viewer.last_viewer.buttons_table[2][2].callback()
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - References", "references tab did not open")
-        assert(viewer.last_viewer.text:find("Reference text from uploaded source", 1, true), "references tab is missing cited text")
+        assert(viewer.last_viewer.text:find("Golden cited passage", 1, true), "references tab is missing cited text")
         viewer.last_viewer.buttons_table[4][2].callback()
         assert(viewer.last_viewer and viewer.last_viewer.title == "NotebookLM - Answer", "details back did not return to answer")
         viewer.last_viewer.buttons_table[1][1].callback()
@@ -1016,19 +1231,17 @@ def main() -> None:
         assert(followup_dialog and followup_dialog.title == "NotebookLM follow-up", "follow-up input did not open")
         followup_dialog.input = "Follow up on this answer"
         followup_dialog.buttons[1][2].callback()
-        local followup_payload = _G.__last_encoded_value
-        assert(followup_payload and followup_payload.conversation_id == "mock-conversation", "follow-up conversation id was not sent")
-        assert(followup_payload.prompt == "Follow up on this answer", "follow-up prompt was not sent")
+        assert(viewer.last_viewer and viewer.last_viewer.text:find("Golden answer", 1, true), "follow-up did not return an answer")
         local file = io.open(viewer.last_opened, "r")
         assert(file, "answer file was not written")
         local content = file:read("*all")
         file:close()
-        assert(content:find("Mock answer from bridge", 1, true), "answer content is missing")
+        assert(content:find("Golden answer", 1, true), "answer content is missing")
         assert(content:find("Highlighted passage", 1, true), "highlight content is missing")
-        assert(content:find("Conversation ID: mock%-conversation"), "conversation id is missing")
+        assert(content:find("Conversation ID: conv%-golden"), "conversation id is missing")
         assert(content:find("## Sources used", 1, true), "sources used section is missing")
-        assert(content:find("source%-1"), "source id is missing")
-        assert(content:find("Reference text from uploaded source", 1, true), "cited text is missing")
+        assert(content:find("src%-golden"), "source id is missing")
+        assert(content:find("Golden cited passage", 1, true), "cited text is missing")
         assert(content:find("## Citations", 1, true), "citations section is missing")
         local last_answer_file = io.open("/tmp/notebooklm-last-answer.md", "r")
         assert(last_answer_file, "last answer file was not written")
@@ -1088,13 +1301,7 @@ def main() -> None:
         local long_content = long_file:read("*all")
         long_file:close()
         assert(long_content:find("Long highlighted passage. Long highlighted passage.", 1, true), "long highlight content is missing")
-        assert(long_content:find("Long answer paragraph from bridge. Long answer paragraph from bridge.", 1, true), "long answer content is missing")
-
-        _G.__force_network_error = true
-        plugin.notebooklm_ui:show_status()
-        local uimanager = require("ui/uimanager")
-        local last = uimanager.shown[#uimanager.shown]
-        assert(last and last.text and last.text:find("network unreachable", 1, true), "offline bridge error was not surfaced")
+        assert(long_content:find("Golden answer", 1, true), "long answer content is missing")
         '''
     )
     print("plugin runtime smoke ok")

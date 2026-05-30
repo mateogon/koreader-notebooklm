@@ -10,11 +10,14 @@ local TextViewer = require("ui/widget/textviewer")
 local UIManager = require("ui/uimanager")
 local _ = require("gettext")
 local has_ask_bubble, AskBubble = pcall(require, "ask_bubble")
+local SourceExport = require("source_export")
 
 local NotebookLMUI = {}
 local MAX_ANSWER_HISTORY = 30
 local ASK_POLL_INTERVAL_SECONDS = 2
 local ASK_MAX_POLLS = 120
+local UPLOAD_POLL_INTERVAL_SECONDS = 3
+local UPLOAD_MAX_POLLS = 220
 
 local function compact_text(value)
     return tostring(value or ""):gsub("%s+", " "):gsub("^%s+", ""):gsub("%s+$", "")
@@ -76,8 +79,10 @@ function NotebookLMUI:new(opts)
         prompts = opts.prompts,
         input_dialog = nil,
         active_ask = false,
+        active_upload = false,
         ask_bubble = nil,
         ask_bubble_dismissed = false,
+        prompt_config_error_shown = nil,
     }, { __index = self })
 end
 
@@ -117,6 +122,16 @@ function NotebookLMUI:_show_info(message)
     })
 end
 
+function NotebookLMUI:_cleanup_temp_source(source)
+    if source and source.temporary and source.file_path and source.file_path ~= "" then
+        os.remove(source.file_path)
+    end
+    if source and source.fallback and source.fallback.temporary
+        and source.fallback.file_path and source.fallback.file_path ~= "" then
+        os.remove(source.fallback.file_path)
+    end
+end
+
 function NotebookLMUI:_close_ask_bubble()
     if self.ask_bubble then
         UIManager:close(self.ask_bubble)
@@ -145,6 +160,11 @@ end
 function NotebookLMUI:_show_ask_progress_bubble(poll_count)
     local dots = string.rep(".", ((poll_count or 0) % 3) + 1)
     self:_show_ask_bubble(self:_t("still_thinking") .. dots .. "  x", "running")
+end
+
+function NotebookLMUI:_show_upload_progress_bubble(poll_count)
+    local dots = string.rep(".", ((poll_count or 0) % 3) + 1)
+    self:_show_ask_bubble(self:_t("processing_source") .. dots .. "  x", "running")
 end
 
 function NotebookLMUI:_stabilize_text_viewer_scroll(viewer)
@@ -287,35 +307,7 @@ function NotebookLMUI:_remember_answer(result, path, id)
 end
 
 function NotebookLMUI:_sync_bridge_link()
-    if tostring(self.settings:read("backend") or "bridge") ~= "bridge" then
-        local local_link = self:_link()
-        if local_link and local_link.notebook_id then
-            return local_link
-        end
-        local notebook_id = tostring(self.settings:read("direct_notebook_id") or "")
-        if notebook_id ~= "" then
-            return self:_bridge_link(notebook_id, notebook_id, nil)
-        end
-        return nil
-    end
-    local book = self:_book()
-    local response, err, code = self.client:get_book(book.book_id)
-    if response and response.book and response.book.notebook_id then
-        logger.info("NotebookLM: bridge mapping found for book", book.book_id, "notebook", response.book.notebook_id)
-        return self:_save_link(response.book)
-    end
-    if code == 404 then
-        logger.info("NotebookLM: bridge has no mapping for book", book.book_id, "ignoring local link until relink")
-        return nil
-    end
-    if err then
-        logger.warn("NotebookLM: bridge mapping lookup failed for book", book.book_id, err)
-    end
-    local local_link = self:_link()
-    if local_link and local_link.notebook_id then
-        logger.info("NotebookLM: using local link for book", book.book_id, "notebook", local_link.notebook_id)
-    end
-    return local_link
+    return self:_link()
 end
 
 function NotebookLMUI:_save_link(link)
@@ -325,12 +317,6 @@ end
 function NotebookLMUI:_clear_link()
     local book = self:_book()
     logger.info("NotebookLM: clearing local link for book", book.book_id)
-    if tostring(self.settings:read("backend") or "bridge") == "bridge" then
-        local _, err = self.client:clear_book(book.book_id)
-        if err then
-            logger.warn("NotebookLM: bridge clear link failed for book", book.book_id, err)
-        end
-    end
     self.storage:clear_link(self.plugin.ui)
 end
 
@@ -345,45 +331,20 @@ function NotebookLMUI:_bridge_link(notebook_id, notebook_title, source_id)
         path = book.path,
         source_id = source_id,
     }
-    if tostring(self.settings:read("backend") or "bridge") == "bridge" then
-        local _, err = self.client:link_book(link)
-        if err then
-            return nil, err
-        end
-    end
     return self:_save_link(link), nil
 end
 
 function NotebookLMUI:show_status()
     local book = self:_book()
-    local backend = tostring(self.settings:read("backend") or "bridge")
-    local local_link
-    local backend_lines
-    if backend == "bridge" then
-        local_link = self:_sync_bridge_link()
-        local health, health_err = self.client:health()
-        if health then
-            backend_lines = {
-                string.format("Bridge: OK (%s)", health.adapter or "unknown"),
-                "Bridge URL: " .. tostring(self.settings:read("bridge_url")),
-            }
-        else
-            backend_lines = {
-                "Bridge: " .. tostring(health_err),
-                "Bridge URL: " .. tostring(self.settings:read("bridge_url")),
-            }
-        end
-    else
-        local_link = self:_sync_bridge_link()
-        local auth_path = tostring(self.settings:read("direct_auth_bundle_path") or "")
-        local direct_notebook = tostring(self.settings:read("direct_notebook_id") or "")
-        backend_lines = {
-            "Backend: lua-direct",
-            "Lua direct auth: " .. (auth_path ~= "" and "configured" or "not set"),
-            "Lua direct notebook: " .. (direct_notebook ~= "" and direct_notebook or "auto"),
-            "Debug: NotebookLM > Settings > Lua direct smoke",
-        }
-    end
+    local local_link = self:_sync_bridge_link()
+    local auth_path = tostring(self.settings:read("direct_auth_bundle_path") or "")
+    local direct_notebook = tostring(self.settings:read("direct_notebook_id") or "")
+    local backend_lines = {
+        "Runtime: lua-direct",
+        "Auth bundle: " .. (auth_path ~= "" and "configured" or "not set"),
+        "Default notebook: " .. (direct_notebook ~= "" and direct_notebook or "auto"),
+        "Debug: NotebookLM > Settings > Lua direct smoke",
+    }
 
     local link_line = "Notebook: not linked"
     if local_link and local_link.notebook_id then
@@ -417,7 +378,6 @@ end
 function NotebookLMUI:show_setup(on_ready, on_back)
     local book = self:_book()
     local link = self:_sync_bridge_link()
-    local backend = tostring(self.settings:read("backend") or "bridge")
     local link_text = link and link.notebook_id
         and ("Current notebook:\n" .. tostring(link.notebook_title or link.notebook_id))
         or "This book is not linked to a NotebookLM notebook yet."
@@ -431,17 +391,15 @@ function NotebookLMUI:show_setup(on_ready, on_back)
             end,
         },
     }
-    if backend == "bridge" or backend == "lua-direct" then
-        table.insert(action_row, {
-            text = _("Create"),
-            callback = function()
-                local title = self.input_dialog:getInputText()
-                self:_close_input()
-                self:create_notebook(title, false, on_ready, on_back)
-            end,
-        })
-    end
-    if (backend == "bridge" or backend == "lua-direct") and self.settings:read("enable_upload") then
+    table.insert(action_row, {
+        text = _("Create"),
+        callback = function()
+            local title = self.input_dialog:getInputText()
+            self:_close_input()
+            self:create_notebook(title, false, on_ready, on_back)
+        end,
+    })
+    if self.settings:read("enable_upload") then
         table.insert(action_row, {
             text = _("Create+Upload"),
             callback = function()
@@ -513,7 +471,7 @@ function NotebookLMUI:show_setup(on_ready, on_back)
             tostring(book.title or "Current book"),
             "",
             link_text,
-            backend == "bridge" and "" or "Lua direct uses the configured auth bundle on this device.",
+            "Lua direct uses the configured auth bundle on this device.",
         }, "\n"),
         input_hint = _("Notebook title or notebook ID"),
         input_type = "text",
@@ -599,6 +557,11 @@ function NotebookLMUI:create_notebook(title, upload_after, on_ready, on_back)
     local book = self:_book()
     title = title and title ~= "" and title or ("KOReader - " .. tostring(book.title or "Untitled book"))
 
+    if upload_after then
+        self:start_create_upload_job(title, book, on_ready)
+        return
+    end
+
     local created, err = self.client:create_notebook(title)
     if err then
         self:_show_error(err)
@@ -610,40 +573,159 @@ function NotebookLMUI:create_notebook(title, upload_after, on_ready, on_back)
         return
     end
 
-    local source_id = nil
-    if upload_after then
-        if not self.settings:read("enable_upload") then
-            self:_show_error("Source upload is disabled in NotebookLM settings.")
-            return
-        end
-        if not book.path or book.path == "" then
-            self:_show_error("This book does not expose a file path for upload.")
-            return
-        end
-        local upload, upload_err = self.client:upload_source(notebook.id, {
-            file_path = book.path,
-            title = book.title,
-            wait = true,
-        })
-        if upload_err then
-            self:_show_error(upload_err)
-            return
-        end
-        source_id = upload and upload.source_id or nil
-    end
-
-    local saved, link_err = self:_bridge_link(notebook.id, notebook.title or title, source_id)
+    local saved, link_err = self:_bridge_link(notebook.id, notebook.title or title, nil)
     if link_err then
         self:_show_error(link_err)
         return
     end
 
-    self:_show_info(upload_after and "Notebook created, source uploaded, and book linked." or "Notebook created and book linked.")
+    self:_show_info("Notebook created and book linked.")
     if on_ready then
         on_ready(saved)
     elseif on_back then
         on_back()
     end
+end
+
+function NotebookLMUI:start_create_upload_job(title, book, on_ready)
+    if self.active_upload then
+        self:_show_error("NotebookLM upload already running.")
+        return
+    end
+    if not self.settings:read("enable_upload") then
+        self:_show_error("Source upload is disabled in NotebookLM settings.")
+        return
+    end
+    if not book.path or book.path == "" then
+        self:_show_error("This book does not expose a file path for upload.")
+        return
+    end
+
+    local source, export_err = SourceExport.prepare(book, self.plugin and self.plugin.ui and self.plugin.ui.document, {
+        prefer_original = true,
+    })
+    if not source then
+        self:_show_error(export_err)
+        return
+    end
+    logger.info(
+        "NotebookLM: prepared upload source",
+        "method", tostring(source.method),
+        "file_path", tostring(source.file_path),
+        "source_title", tostring(source.source_title),
+        "fallback", source.fallback and tostring(source.fallback.source_title) or "none",
+        "bytes", tostring(source.byte_count or "")
+    )
+
+    self.active_upload = true
+    self.ask_bubble_dismissed = false
+    self:_show_ask_bubble(self:_t("uploading") .. "  x", "running")
+
+    local job, err = self.client:start_create_upload_job({
+        title = title,
+        upload_after = true,
+        file_path = source.file_path,
+        source_title = source.source_title or book.title,
+        source_export_method = source.method,
+        fallback_file_path = source.fallback and source.fallback.file_path or nil,
+        fallback_source_title = source.fallback and source.fallback.source_title or nil,
+        fallback_source_export_method = source.fallback and source.fallback.method or nil,
+        wait = true,
+        wait_timeout = 600,
+    })
+    if err then
+        self.active_upload = false
+        self:_close_ask_bubble()
+        self:_cleanup_temp_source(source)
+        self:_show_error(err)
+        return
+    end
+    if not job or not job.job_id then
+        self.active_upload = false
+        self:_close_ask_bubble()
+        self:_cleanup_temp_source(source)
+        self:_show_error("NotebookLM did not return an upload job ID.")
+        return
+    end
+    self:poll_create_upload_job(job.job_id, {
+        title = title,
+        book = book,
+        source = source,
+        on_ready = on_ready,
+        poll_count = 0,
+    })
+end
+
+function NotebookLMUI:poll_create_upload_job(job_id, context)
+    context.poll_count = (context.poll_count or 0) + 1
+    if context.poll_count > UPLOAD_MAX_POLLS then
+        self.active_upload = false
+        self:_close_ask_bubble()
+        self:_cleanup_temp_source(context.source)
+        self:_show_error("NotebookLM source processing timed out.")
+        return
+    end
+
+    UIManager:scheduleIn(UPLOAD_POLL_INTERVAL_SECONDS, function()
+        self:_show_upload_progress_bubble(context.poll_count)
+        local job, err = self.client:get_create_upload_job(job_id)
+        if err then
+            self.active_upload = false
+            self:_close_ask_bubble()
+            self:_cleanup_temp_source(context.source)
+            self:_show_error(err)
+            return
+        end
+        if not job then
+            self.active_upload = false
+            self:_close_ask_bubble()
+            self:_cleanup_temp_source(context.source)
+            self:_show_error("NotebookLM did not return upload job status.")
+            return
+        end
+        if job.status == "queued" or job.status == "running" then
+            self:poll_create_upload_job(job_id, context)
+            return
+        end
+        if job.status == "failed" then
+            self.active_upload = false
+            self:_close_ask_bubble()
+            self:_cleanup_temp_source(context.source)
+            self:_show_error(job.error or "NotebookLM upload job failed.")
+            return
+        end
+        if job.status ~= "succeeded" or type(job.result) ~= "table" then
+            self.active_upload = false
+            self:_close_ask_bubble()
+            self:_cleanup_temp_source(context.source)
+            self:_show_error("NotebookLM upload job returned an unknown status.")
+            return
+        end
+
+        local notebook = job.result.notebook
+        if not notebook or not notebook.id then
+        self.active_upload = false
+        self:_close_ask_bubble()
+        self:_cleanup_temp_source(context.source)
+            self:_show_error("NotebookLM upload job did not return notebook details.")
+            return
+        end
+        local upload = job.result.upload
+        local saved, link_err = self:_bridge_link(notebook.id, notebook.title or context.title, upload and upload.source_id or nil)
+        self.active_upload = false
+        if link_err then
+            self:_close_ask_bubble()
+            self:_show_error(link_err)
+            return
+        end
+        self:_show_ask_bubble(self:_t("notebook_ready") .. "  x", "ready", function()
+            if context.on_ready then
+                context.on_ready(saved)
+            else
+                self:show_status()
+            end
+        end)
+    end)
 end
 
 function NotebookLMUI:show_highlight_menu(highlighted_text)
@@ -690,7 +772,9 @@ function NotebookLMUI:show_highlight_menu(highlighted_text)
                     text = setup_text,
                     callback = function()
                         self:_close_input()
-                        self:show_setup(nil, back_to_hub)
+                        self:show_setup(function()
+                            self:show_prompt_picker(highlighted_text, back_to_hub)
+                        end, back_to_hub)
                     end,
                 },
                 {
@@ -812,7 +896,16 @@ end
 
 function NotebookLMUI:show_prompt_picker(highlighted_text, on_back)
     local rows = {}
-    for _, prompt in ipairs(self.prompts.all(self:_language())) do
+    local prompts = self.prompts.all(self:_language())
+    local config_error = self.prompts.config_error and self.prompts.config_error() or nil
+    if config_error and self.prompt_config_error_shown ~= config_error then
+        self.prompt_config_error_shown = config_error
+        self:_show_error(self:_t("prompt_config_ignored"))
+    elseif not config_error then
+        self.prompt_config_error_shown = nil
+    end
+
+    for _, prompt in ipairs(prompts) do
         table.insert(rows, {
             {
                 text = prompt.label,

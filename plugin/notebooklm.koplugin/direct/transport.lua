@@ -11,13 +11,14 @@ local async_requests = 0
 
 local FORM_CONTENT_TYPE = "application/x-www-form-urlencoded;charset=UTF-8"
 local USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+local DEFAULT_ACCEPT_LANGUAGE = "en-US,en;q=0.9"
 
 local function request_headers(body, auth)
     local headers = {
         ["Content-Type"] = FORM_CONTENT_TYPE,
         ["Content-Length"] = tostring(#body),
         ["Accept"] = "*/*",
-        ["Accept-Language"] = "en-US,en;q=0.9",
+        ["Accept-Language"] = auth.accept_language or DEFAULT_ACCEPT_LANGUAGE,
         ["Origin"] = auth.base_url,
         ["Referer"] = (auth.base_url:gsub("/+$", "")) .. "/",
         ["User-Agent"] = USER_AGENT,
@@ -36,6 +37,7 @@ end
 local function upload_headers(auth, extra)
     local headers = {
         ["Accept"] = "*/*",
+        ["Accept-Language"] = auth.accept_language or DEFAULT_ACCEPT_LANGUAGE,
         ["Origin"] = auth.base_url,
         ["Referer"] = (auth.base_url:gsub("/+$", "")) .. "/",
         ["User-Agent"] = USER_AGENT,

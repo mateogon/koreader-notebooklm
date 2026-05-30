@@ -20,10 +20,6 @@ local function direct_job_id()
     return string.format("lua-direct-%s-%d-%06d", timestamp, clock, math.random(0, 999999))
 end
 
-function Client:_backend()
-    return tostring(self.settings:read("backend") or "bridge")
-end
-
 function Client:_direct()
     if not self.direct_client then
         local DirectClient = require("direct.client")
@@ -107,14 +103,16 @@ function Client:_lua_direct_worker_command(job_id, request_path, result_path, lo
     })
 end
 
-function Client:_start_lua_direct_worker_job(job_id, request)
+function Client:_start_lua_direct_worker_job(job_id, action, request, timeout_seconds)
     local dir = self:_ensure_job_dir()
     local request_path = dir .. "/" .. job_id .. "-request.json"
     local result_path = dir .. "/" .. job_id .. "-result.json"
     local log_path = dir .. "/" .. job_id .. ".log"
     local payload = {
         auth_bundle_path = self.settings:read("direct_auth_bundle_path"),
+        language = self.settings:read("language"),
         timeout = self:_timeout(),
+        action = action or "ask",
         request = request,
     }
     local ok, write_err = write_file(request_path, Json.encode(payload))
@@ -134,6 +132,7 @@ function Client:_start_lua_direct_worker_job(job_id, request)
         result_path = result_path,
         log_path = log_path,
         started_at = os.time(),
+        timeout_seconds = timeout_seconds or (self:_timeout() + 30),
     }
 end
 
@@ -143,7 +142,7 @@ function Client:_refresh_lua_direct_worker_job(job)
     end
     local body = read_file(job.result_path)
     if not body then
-        local timeout = self:_timeout() + 30
+        local timeout = job.timeout_seconds or (self:_timeout() + 30)
         if job.started_at and os.time() - job.started_at > timeout then
             job.status = "failed"
             job.error = "Lua direct worker timed out."
@@ -166,196 +165,113 @@ function Client:_refresh_lua_direct_worker_job(job)
     return job
 end
 
-function Client:_bridge_url()
-    return self.settings:read("bridge_url")
-end
-
 function Client:_timeout()
     return tonumber(self.settings:read("timeout")) or 120
 end
 
-function Client:_short_timeout()
-    local timeout = self:_timeout()
-    if timeout > 10 then
-        return 10
-    end
-    return timeout
-end
-
-function Client:_ensure_bridge()
-    if self:_backend() ~= "bridge" then
-        return nil, "Only the bridge backend is implemented right now."
-    end
-    return true, nil
-end
-
-function Client:_get(path, timeout)
-    local ok, err = self:_ensure_bridge()
-    if not ok then
-        return nil, err
-    end
-    return self.http.get(self:_bridge_url(), path, timeout or self:_timeout())
-end
-
-function Client:_post(path, payload, timeout)
-    local ok, err = self:_ensure_bridge()
-    if not ok then
-        return nil, err
-    end
-    return self.http.post(self:_bridge_url(), path, payload, timeout or self:_timeout())
-end
-
-function Client:_delete(path)
-    local ok, err = self:_ensure_bridge()
-    if not ok then
-        return nil, err
-    end
-    return self.http.delete(self:_bridge_url(), path, self:_short_timeout())
-end
-
 function Client:health()
-    if self:_backend() == "lua-direct" then
-        local _, auth_err = self:_direct():load_auth()
-        if auth_err then
-            return nil, auth_err
-        end
-        return {
-            ok = true,
-            service = "koreader-notebooklm-lua-direct",
-            adapter = "lua-direct",
-            notebook_id = self.settings:read("direct_notebook_id"),
-        }
+    local _, auth_err = self:_direct():load_auth()
+    if auth_err then
+        return nil, auth_err
     end
-    return self:_get("/health", self:_short_timeout())
+    return {
+        ok = true,
+        service = "koreader-notebooklm-lua-direct",
+        adapter = "lua-direct",
+        notebook_id = self.settings:read("direct_notebook_id"),
+    }
 end
 
 function Client:list_notebooks()
-    if self:_backend() == "lua-direct" then
-        return self:_direct():list_notebooks()
-    end
-    return self:_get("/notebooks", self:_short_timeout())
+    return self:_direct():list_notebooks()
 end
 
 function Client:create_notebook(title)
-    if self:_backend() == "lua-direct" then
-        return self:_direct():create_notebook(title)
-    end
-    return self:_post("/notebooks", { title = title })
+    return self:_direct():create_notebook(title)
 end
 
 function Client:get_book(book_id)
-    if self:_backend() == "lua-direct" then
-        return nil, nil, 404
-    end
-    local response, err, code = self:_get("/books/" .. self.http.path_escape(book_id), self:_short_timeout())
-    if code == 404 then
-        return nil, nil, 404
-    end
-    return response, err, code
+    return nil, nil, 404
 end
 
 function Client:link_book(book)
-    if self:_backend() == "lua-direct" then
-        return { ok = true, book = book, adapter = "lua-direct" }
-    end
-    return self:_post("/books/link", book)
+    return { ok = true, book = book, adapter = "lua-direct" }
 end
 
 function Client:clear_book(book_id)
-    if self:_backend() == "lua-direct" then
-        return { ok = true, adapter = "lua-direct" }
-    end
-    return self:_delete("/books/" .. self.http.path_escape(book_id))
+    return { ok = true, adapter = "lua-direct" }
 end
 
 function Client:upload_source(notebook_id, source)
-    source = source or {}
-    if self:_backend() == "lua-direct" then
-        return self:_direct():upload_source(notebook_id, source)
-    end
-    local ok, err = self:_ensure_bridge()
-    if not ok then
-        return nil, err
-    end
-    if self.settings:read("upload_mode") ~= "path" then
-        local filename = source.file_path and source.file_path:match("([^/]+)$") or nil
-        if not filename or filename == "" then
-            filename = source.title
-        end
-        if not filename or filename == "" then
-            filename = "source"
-        end
-        return self.http.post_multipart_file(
-            self:_bridge_url(),
-            "/sources/upload-file",
-            {
-                notebook_id = notebook_id,
-                title = source.title,
-                wait = source.wait ~= false and "true" or "false",
-            },
-            "file",
-            source.file_path,
-            filename,
-            self:_timeout()
-        )
-    end
-    return self:_post("/sources/upload", {
-        notebook_id = notebook_id,
-        file_path = source.file_path,
-        title = source.title,
-        wait = source.wait ~= false,
-    })
+    return self:_direct():upload_source(notebook_id, source or {})
 end
 
 function Client:ask(request)
-    if self:_backend() == "lua-direct" then
-        return self:_direct():ask(request)
-    end
-    return self:_post("/ask", request)
+    return self:_direct():ask(request)
 end
 
 function Client:start_ask_job(request)
-    if self:_backend() == "lua-direct" then
-        local job_id = direct_job_id()
-        local worker_job, worker_err = self:_start_lua_direct_worker_job(job_id, request)
-        if worker_err then
-            return nil, worker_err
-        end
-        if worker_job then
-            self.direct_jobs[job_id] = worker_job
-            return { ok = true, job_id = job_id, status = worker_job.status, adapter = "lua-direct" }
-        end
-
-        local job = {
-            ok = true,
-            job_id = job_id,
-            status = "running",
-            adapter = "lua-direct",
-        }
-        self.direct_jobs[job_id] = job
-        self:_direct():ask_async(request, function(response, err)
-            if err then
-                job.status = "failed"
-                job.error = err
-                return
-            end
-            job.status = "succeeded"
-            job.result = response
-        end)
-        return { ok = true, job_id = job_id, status = job.status, adapter = "lua-direct" }
+    local job_id = direct_job_id()
+    local worker_job, worker_err = self:_start_lua_direct_worker_job(job_id, "ask", request, self:_timeout() + 30)
+    if worker_err then
+        return nil, worker_err
     end
-    return self:_post("/ask/jobs", request, self:_short_timeout())
+    if worker_job then
+        self.direct_jobs[job_id] = worker_job
+        return { ok = true, job_id = job_id, status = worker_job.status, adapter = "lua-direct" }
+    end
+
+    local job = {
+        ok = true,
+        job_id = job_id,
+        status = "running",
+        adapter = "lua-direct",
+    }
+    self.direct_jobs[job_id] = job
+    self:_direct():ask_async(request, function(response, err)
+        if err then
+            job.status = "failed"
+            job.error = err
+            return
+        end
+        job.status = "succeeded"
+        job.result = response
+    end)
+    return { ok = true, job_id = job_id, status = job.status, adapter = "lua-direct" }
 end
 
 function Client:get_ask_job(job_id)
-    if self:_backend() == "lua-direct" then
-        local job = self.direct_jobs[job_id]
-        if not job then
-            return nil, "Lua direct ask job was not found."
-        end
-        return self:_refresh_lua_direct_worker_job(job)
+    local job = self.direct_jobs[job_id]
+    if not job then
+        return nil, "Lua direct ask job was not found."
     end
-    return self:_get("/ask/jobs/" .. self.http.path_escape(job_id), self:_short_timeout())
+    return self:_refresh_lua_direct_worker_job(job)
+end
+
+function Client:start_create_upload_job(request)
+    local job_id = direct_job_id()
+    local worker_job, worker_err = self:_start_lua_direct_worker_job(
+        job_id,
+        "create_upload",
+        request,
+        math.max(self:_timeout(), 600) + 60
+    )
+    if worker_err then
+        return nil, worker_err
+    end
+    if not worker_job then
+        return nil, "Background upload worker is not available in this KOReader build."
+    end
+    self.direct_jobs[job_id] = worker_job
+    return { ok = true, job_id = job_id, status = worker_job.status, adapter = "lua-direct" }
+end
+
+function Client:get_create_upload_job(job_id)
+    local job = self.direct_jobs[job_id]
+    if not job then
+        return nil, "Lua direct upload job was not found."
+    end
+    return self:_refresh_lua_direct_worker_job(job)
 end
 
 return Client

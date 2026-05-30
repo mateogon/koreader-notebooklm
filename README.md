@@ -20,11 +20,12 @@ Implemented and locally validated:
 - KOReader plugin menu entry for selected text.
 - Book-to-notebook linking and relinking.
 - Preset and custom prompts.
+- User-editable prompt presets via `koreader/settings/notebooklm-prompts.lua`.
 - Local answer history in KOReader.
 - Structured answer viewer with `Follow-up`, `New question`, `Details`, and optional automatic opening.
 - Local FastAPI bridge with `mock` and `nlm` adapters.
 - Experimental `nlm-lite` bridge adapter that talks to NotebookLM directly over HTTP without calling the `nlm` subprocess.
-- Experimental KOReader `lua-direct` backend that talks to NotebookLM directly from Kindle/KOReader using a synced auth bundle.
+- KOReader `lua-direct` runtime that talks to NotebookLM directly from Kindle/KOReader using a synced auth bundle.
 - Auth sync script for Mac/PC to Kindle over USB or SSH.
 - Background `/ask/jobs` flow so long NotebookLM answers do not block KOReader.
 - Conversation continuity through NotebookLM `conversation_id` for follow-up questions.
@@ -118,11 +119,7 @@ Install the plugin into a KOReader plugin directory:
 scripts/install-plugin-dev.sh /path/to/koreader/plugins --copy
 ```
 
-For bridge mode, restart KOReader and configure the bridge URL if needed:
-
-```text
-http://127.0.0.1:8765
-```
+Bridge mode is kept for development scripts, not the normal KOReader UI.
 
 ## Plugin Flow
 
@@ -133,6 +130,38 @@ http://127.0.0.1:8765
 5. Continue reading while NotebookLM answers in the background.
 6. Open the answer automatically, or find it later under `NotebookLM answers`.
 7. From an answer, ask a follow-up in the same NotebookLM conversation or start a new question.
+
+## Prompt Presets
+
+Built-in prompt defaults live in `plugin/notebooklm.koplugin/prompts.lua`.
+Personal edits should go in KOReader settings instead, so plugin updates do not
+overwrite them:
+
+```text
+koreader/settings/notebooklm-prompts.lua
+```
+
+Start from the example:
+
+```sh
+cp examples/notebooklm-prompts.example.lua ~/notebooklm-prompts.lua
+scripts/validate-prompts.sh ~/notebooklm-prompts.lua
+```
+
+Sync to Kindle over USB:
+
+```sh
+scripts/sync-prompts-to-kindle.sh --file ~/notebooklm-prompts.lua --usb /Volumes/Kindle
+```
+
+Or over SSH:
+
+```sh
+scripts/sync-prompts-to-kindle.sh --file ~/notebooklm-prompts.lua --ssh <kindle-ip> --port 2222
+```
+
+The config can override built-in prompts by ID, disable defaults, and add custom
+prompts. Restart KOReader after syncing to force a clean plugin reload.
 
 ## Security
 
@@ -146,6 +175,7 @@ The `.gitignore` excludes common local artifacts, including:
 - local books such as `.epub`, `.pdf`, `.azw3`, `.kfx`
 - KOReader `.sdr` folders
 - generated NotebookLM answer files
+- personal prompt config files such as `notebooklm-prompts.lua`
 - downloaded reference repos
 
 When running the bridge on `0.0.0.0` for Kindle/Android testing, keep it on a
@@ -177,6 +207,7 @@ curl http://127.0.0.1:8765/health
 
 - Validate real create-and-upload from KOReader UI with more EPUB/PDF samples.
 - Polish `scripts/sync-auth-to-kindle.sh` through more USB/SSH setups.
+- Polish prompt preset customization after more Kindle usage.
 - Improve upload handling for large files and PDFs.
 - Improve answer notification UX while jobs are running.
 - Harden book identity beyond path/title/author.

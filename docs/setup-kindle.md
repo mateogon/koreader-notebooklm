@@ -58,32 +58,9 @@ Both flows write the auth bundle to:
 /mnt/us/koreader/settings/notebooklm-auth-bundle.json
 ```
 
-and configure KOReader for `backend = "lua-direct"`.
+and configure KOReader to use that auth bundle.
 
 For more detail, see [Auth sync](auth-sync.md).
-
-## Bridge URL
-
-Bridge mode still exists for development and compatibility testing. The Kindle
-cannot use `127.0.0.1` to reach a bridge running on the Mac. Use the Mac's LAN
-IP in the plugin menu:
-
-```text
-NotebookLM -> Bridge URL
-```
-
-Example:
-
-```text
-http://192.168.1.20:8765
-```
-
-Start the bridge bound to the LAN interface when testing from Kindle:
-
-```sh
-cd bridge
-KOREADER_NOTEBOOKLM_HOST=0.0.0.0 ../scripts/run-bridge-dev.sh
-```
 
 ## Logs
 
