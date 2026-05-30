@@ -70,6 +70,7 @@ logs/
 # Temporary files
 tmp/
 temp/
+dist/
 *.tmp
 *.swp
 

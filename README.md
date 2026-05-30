@@ -278,6 +278,15 @@ Check the bridge:
 curl http://127.0.0.1:8765/health
 ```
 
+Package an installable plugin zip:
+
+```sh
+scripts/package-plugin.sh --version v0.1.0-alpha
+```
+
+Before publishing an alpha, run the manual checklist in
+[Alpha validation](docs/alpha-validation.md).
+
 ## Security
 
 Do not commit:
@@ -315,6 +324,7 @@ trusted network. The preferred Kindle flow does not require a LAN bridge.
 - [macOS setup](docs/setup-mac.md)
 - [Fresh PC auth setup](docs/setup-pc-auth.md)
 - [Auth sync](docs/auth-sync.md)
+- [Alpha validation](docs/alpha-validation.md)
 - [KOReader setup](docs/setup-koreader.md)
 - [Kindle setup](docs/setup-kindle.md)
 - [Roadmap](docs/roadmap.md)
